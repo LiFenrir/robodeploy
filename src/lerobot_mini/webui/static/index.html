@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>LeRobot Mini - 数据采集</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Camera Feeds -->
+        <div class="cameras" id="camera-container">
+            <!-- Canvas elements injected by JS -->
+        </div>
+
+        <!-- Status Panel -->
+        <div class="status-panel">
+            <div class="status-row">
+                <span id="recording-indicator" class="indicator">●</span>
+                <span id="mode-display" class="mode">-</span>
+                <span id="control-display" class="control">-</span>
+            </div>
+            <div class="status-row">
+                <span>剧集: <strong id="episode-num">0</strong></span>
+                <span>帧数: <strong id="frame-count">0</strong></span>
+                <span>耗时: <strong id="elapsed-time">0.0s</strong></span>
+            </div>
+            <div class="status-row">
+                <span id="inference-status">推理: -</span>
+                <span id="connection-status" class="disconnected">● 未连接</span>
+            </div>
+        </div>
+
+        <!-- Control Buttons -->
+        <div class="controls">
+            <button id="btn-switch" class="btn btn-mode" data-cmd="switch_mode">
+                <span class="btn-label">P</span>
+                <span class="btn-desc">切换模式</span>
+            </button>
+            <button id="btn-record" class="btn btn-record" data-cmd="toggle_record">
+                <span class="btn-label">R</span>
+                <span class="btn-desc">录制</span>
+            </button>
+            <button id="btn-save" class="btn btn-save" data-cmd="save_prompt">
+                <span class="btn-label">S</span>
+                <span class="btn-desc">保存</span>
+            </button>
+            <button id="btn-reset" class="btn btn-reset" data-cmd="reset_zero">
+                <span class="btn-label">Z</span>
+                <span class="btn-desc">归零</span>
+            </button>
+            <button id="btn-stop" class="btn btn-stop" data-cmd="stop">
+                <span class="btn-label">■</span>
+                <span class="btn-desc">停止</span>
+            </button>
+        </div>
+
+        <!-- Save Label Dialog (hidden by default) -->
+        <div id="save-dialog" class="dialog hidden">
+            <div class="dialog-content">
+                <h3>标记剧集</h3>
+                <div class="label-buttons">
+                    <button id="btn-success" class="btn-label-choice btn-success" data-label="1">
+                        ✓ 成功
+                    </button>
+                    <button id="btn-failure" class="btn-label-choice btn-failure" data-label="0">
+                        ✗ 失败
+                    </button>
+                    <button id="btn-discard" class="btn-label-choice btn-discard" data-label="-1">
+                        🗑 丢弃
+                    </button>
+                </div>
+                <button id="btn-cancel-save" class="btn-cancel">取消</button>
+            </div>
+        </div>
+
+        <!-- Episode History -->
+        <div class="history">
+            <h4>剧集历史</h4>
+            <div id="history-list" class="history-list"></div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
