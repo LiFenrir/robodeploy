@@ -19,11 +19,11 @@ import time
 from functools import cached_property
 from typing import Any
 
-from lerobot_mini.cameras.utils import make_cameras_from_configs
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
-from lerobot_mini.motors import Motor, MotorNormMode
-from lerobot_mini.motors.calibration_gui import RangeFinderGUI
-from lerobot_mini.motors.feetech import (
+from robodeploy.cameras.utils import make_cameras_from_configs
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.motors import Motor, MotorNormMode
+from robodeploy.motors.calibration_gui import RangeFinderGUI
+from robodeploy.motors.feetech import (
     FeetechMotorsBus,
 )
 

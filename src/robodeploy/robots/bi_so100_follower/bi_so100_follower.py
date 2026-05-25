@@ -19,9 +19,9 @@ import time
 from functools import cached_property
 from typing import Any
 
-from lerobot_mini.cameras.utils import make_cameras_from_configs
-from lerobot_mini.robots.so100_follower import SO100Follower
-from lerobot_mini.robots.so100_follower.config_so100_follower import SO100FollowerConfig
+from robodeploy.cameras.utils import make_cameras_from_configs
+from robodeploy.robots.so100_follower import SO100Follower
+from robodeploy.robots.so100_follower.config_so100_follower import SO100FollowerConfig
 
 from ..robot import Robot
 from .config_bi_so100_follower import BiSO100FollowerConfig

@@ -20,8 +20,8 @@ from functools import wraps
 import pytest
 import torch
 
-from lerobot_mini import available_cameras, available_motors, available_robots
-from lerobot_mini.utils.import_utils import is_package_available
+from robodeploy import available_cameras, available_motors, available_robots
+from robodeploy.utils.import_utils import is_package_available
 
 DEVICE = os.environ.get("LEROBOT_TEST_DEVICE", "cuda") if torch.cuda.is_available() else "cpu"
 

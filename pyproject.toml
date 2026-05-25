@@ -108,6 +108,10 @@ all = [
 ]
 
 # ---------------- Tool Configurations ----------------
+[project.scripts]
+lerobot-find-cameras = "robodeploy.find_cameras:main"
+lerobot-find-port = "robodeploy.find_port:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -132,7 +136,7 @@ ignore = [
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["lerobot_mini"]
+known-first-party = ["robodeploy"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -147,8 +151,8 @@ docstring-code-format = true
 [tool.bandit]
 exclude_dirs = [
     "tests",
-    "src/lerobot_mini/datasets/push_dataset_to_hub",
-    "src/lerobot_mini/datasets/v2/convert_dataset_v1_to_v2",
+    "src/robodeploy/datasets/push_dataset_to_hub",
+    "src/robodeploy/datasets/v2/convert_dataset_v1_to_v2",
 ]
 skips = ["B101", "B311", "B404", "B603", "B615"]
 

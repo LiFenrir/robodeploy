@@ -10,7 +10,7 @@ Combines:
 - Full LeRobot v2.1 compatibility
 
 Usage:
-    from lerobot_mini.datasets.async_writer import HybridLeRobotWriter, CustomFeatureConfig
+    from robodeploy.datasets.async_writer import HybridLeRobotWriter, CustomFeatureConfig
 
     custom_features = [
         CustomFeatureConfig("is_failure_data", "int64", (1,),
@@ -54,13 +54,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from PIL import Image
 
-from lerobot_mini.datasets.compute_stats import compute_episode_stats
-from lerobot_mini.datasets.utils import (
+from robodeploy.datasets.compute_stats import compute_episode_stats
+from robodeploy.datasets.utils import (
     DEFAULT_FEATURES,
     get_hf_features_from_features,
     serialize_dict,
 )
-from lerobot_mini.datasets.video_utils import encode_video_frames, get_video_info
+from robodeploy.datasets.video_utils import encode_video_frames, get_video_info
 
 logger = logging.getLogger(__name__)
 SENTINEL = None

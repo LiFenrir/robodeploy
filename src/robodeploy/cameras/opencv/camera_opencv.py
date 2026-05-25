@@ -31,7 +31,7 @@ if platform.system() == "Windows" and "OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"
 import cv2
 import numpy as np
 
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 from ..camera import Camera
 from ..utils import get_cv2_backend, get_cv2_rotation
@@ -68,8 +68,8 @@ class OpenCVCamera(Camera):
 
     Example:
         ```python
-        from lerobot_mini.cameras.opencv import OpenCVCamera
-        from lerobot_mini.cameras.configuration_opencv import OpenCVCameraConfig, ColorMode, Cv2Rotation
+        from robodeploy.cameras.opencv import OpenCVCamera
+        from robodeploy.cameras.configuration_opencv import OpenCVCameraConfig, ColorMode, Cv2Rotation
 
         # Basic usage with camera index 0
         config = OpenCVCameraConfig(index_or_path=0)

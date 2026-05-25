@@ -14,9 +14,9 @@
 
 from dataclasses import dataclass, field
 
-from lerobot_mini.cameras import CameraConfig
-from lerobot_mini.cameras.opencv import OpenCVCameraConfig
-from lerobot_mini.cameras.realsense import RealSenseCameraConfig
+from robodeploy.cameras import CameraConfig
+from robodeploy.cameras.opencv import OpenCVCameraConfig
+from robodeploy.cameras.realsense import RealSenseCameraConfig
 
 from ..config import RobotConfig
 

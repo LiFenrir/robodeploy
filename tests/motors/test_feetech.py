@@ -21,10 +21,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from lerobot_mini.motors import Motor, MotorCalibration, MotorNormMode
-from lerobot_mini.motors.feetech import MODEL_NUMBER, MODEL_NUMBER_TABLE, FeetechMotorsBus
-from lerobot_mini.motors.feetech.tables import STS_SMS_SERIES_CONTROL_TABLE
-from lerobot_mini.utils.encoding_utils import encode_sign_magnitude
+from robodeploy.motors import Motor, MotorCalibration, MotorNormMode
+from robodeploy.motors.feetech import MODEL_NUMBER, MODEL_NUMBER_TABLE, FeetechMotorsBus
+from robodeploy.motors.feetech.tables import STS_SMS_SERIES_CONTROL_TABLE
+from robodeploy.utils.encoding_utils import encode_sign_magnitude
 
 try:
     import scservo_sdk as scs

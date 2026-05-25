@@ -4,7 +4,7 @@ import numpy as np
 import tree
 from typing_extensions import override
 
-from lerobot_mini.policy_clients.openpi import base_policy as _base_policy
+from robodeploy.policy_clients.openpi import base_policy as _base_policy
 
 
 class ActionChunkBroker(_base_policy.BasePolicy):

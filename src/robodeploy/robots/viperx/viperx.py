@@ -17,11 +17,11 @@ import time
 from functools import cached_property
 from typing import Any
 
-from lerobot_mini.cameras.utils import make_cameras_from_configs
-from lerobot_mini.constants import OBS_STATE
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
-from lerobot_mini.motors import Motor, MotorCalibration, MotorNormMode
-from lerobot_mini.motors.dynamixel import (
+from robodeploy.cameras.utils import make_cameras_from_configs
+from robodeploy.constants import OBS_STATE
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.motors import Motor, MotorCalibration, MotorNormMode
+from robodeploy.motors.dynamixel import (
     DynamixelMotorsBus,
     OperatingMode,
 )

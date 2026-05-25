@@ -15,7 +15,7 @@
 
 from dataclasses import dataclass
 
-from lerobot_mini.policy_clients.config import PolicyClientConfig
+from robodeploy.policy_clients.config import PolicyClientConfig
 
 
 @PolicyClientConfig.register_subclass("openpi")

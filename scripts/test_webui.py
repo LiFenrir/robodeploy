@@ -102,7 +102,7 @@ def load_episode(dataset_dir: Path, episode_idx: int, video_keys: list[str], fps
 def run_test(dataset_dir: str, port: int = 8080, fps: int | None = None,
              loop: bool = True, start_episode: int = 0):
     """Main: start WebUI and replay dataset episodes."""
-    from lerobot_mini.webui.server import WebUIServer
+    from robodeploy.webui.server import WebUIServer
 
     root = Path(dataset_dir)
     info_path = root / "meta" / "info.json"

@@ -19,8 +19,8 @@ from typing import Any
 
 import draccus
 
-from lerobot_mini.constants import HF_LEROBOT_CALIBRATION, TELEOPERATORS
-from lerobot_mini.motors.motors_bus import MotorCalibration
+from robodeploy.constants import HF_LEROBOT_CALIBRATION, TELEOPERATORS
+from robodeploy.motors.motors_bus import MotorCalibration
 
 from .config import TeleoperatorConfig
 

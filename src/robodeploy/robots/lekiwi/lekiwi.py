@@ -22,10 +22,10 @@ from typing import Any
 
 import numpy as np
 
-from lerobot_mini.cameras.utils import make_cameras_from_configs
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
-from lerobot_mini.motors import Motor, MotorCalibration, MotorNormMode
-from lerobot_mini.motors.feetech import (
+from robodeploy.cameras.utils import make_cameras_from_configs
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.motors import Motor, MotorCalibration, MotorNormMode
+from robodeploy.motors.feetech import (
     FeetechMotorsBus,
     OperatingMode,
 )

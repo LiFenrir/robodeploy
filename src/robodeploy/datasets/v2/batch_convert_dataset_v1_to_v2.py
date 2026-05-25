@@ -15,7 +15,7 @@
 # limitations under the License.
 
 """
-This script is for internal use to convert all datasets under the 'lerobot_mini' hub user account to v2.
+This script is for internal use to convert all datasets under the 'robodeploy' hub user account to v2.
 
 Note: Since the original Aloha datasets don't use shadow motors, you need to comment those out in
 lerobot/configs/robot/aloha.yaml before running this script.
@@ -26,8 +26,8 @@ from pathlib import Path
 from textwrap import dedent
 
 from lerobot import available_datasets
-from lerobot_mini.datasets.v2.convert_dataset_v1_to_v2 import convert_dataset
-from lerobot_mini.robots.aloha.configuration_aloha import AlohaRobotConfig
+from robodeploy.datasets.v2.convert_dataset_v1_to_v2 import convert_dataset
+from robodeploy.robots.aloha.configuration_aloha import AlohaRobotConfig
 
 LOCAL_DIR = Path("data/")
 

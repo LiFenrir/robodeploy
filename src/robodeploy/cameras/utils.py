@@ -56,6 +56,22 @@ def get_cv2_rotation(rotation: Cv2Rotation) -> int | None:
         return None
 
 
+def stack_front_cameras(observation: dict, front_key: str = "front", front_1_key: str = "front_1") -> None:
+    """Vertically stack two front cameras after rotating front_1 by 180°.
+
+    Modifies the observation dict in-place: replaces *front_key* with the
+    vertically concatenated image and removes *front_1_key*.
+    """
+    import numpy as np
+
+    if front_key in observation and front_1_key in observation:
+        front = np.asarray(observation[front_key])
+        front_1 = np.asarray(observation[front_1_key])
+        front_1 = np.rot90(front_1, 2)  # rotate 180° around center
+        observation[front_key] = np.concatenate([front, front_1], axis=0)
+        del observation[front_1_key]
+
+
 def get_cv2_backend() -> int:
     import cv2
 

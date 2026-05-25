@@ -1,8 +1,8 @@
-from lerobot_mini.policy_clients.openpi.websocket_client import WebsocketClientPolicy
-from lerobot_mini.policy_clients.openpi.image_tools import resize_with_pad
-from lerobot_mini.policy_clients.openpi.msgpack_numpy import Packer, unpackb
-from lerobot_mini.policy_clients.openpi.config import OpenPIPolicyClientConfig
-from lerobot_mini.policy_clients.openpi.client import OpenPIPolicyClient
+from robodeploy.policy_clients.openpi.websocket_client import WebsocketClientPolicy
+from robodeploy.policy_clients.openpi.image_tools import resize_with_pad
+from robodeploy.policy_clients.openpi.msgpack_numpy import Packer, unpackb
+from robodeploy.policy_clients.openpi.config import OpenPIPolicyClientConfig
+from robodeploy.policy_clients.openpi.client import OpenPIPolicyClient
 
 __all__ = [
     "WebsocketClientPolicy",

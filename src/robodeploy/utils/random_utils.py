@@ -23,8 +23,8 @@ import numpy as np
 import torch
 from safetensors.torch import load_file, save_file
 
-from lerobot_mini.constants import RNG_STATE
-from lerobot_mini.datasets.utils import flatten_dict, unflatten_dict
+from robodeploy.constants import RNG_STATE
+from robodeploy.datasets.utils import flatten_dict, unflatten_dict
 
 
 def serialize_python_rng_state() -> dict[str, torch.Tensor]:

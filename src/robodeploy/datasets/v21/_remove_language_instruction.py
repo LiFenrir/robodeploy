@@ -20,9 +20,9 @@ from datasets import get_dataset_config_info
 from huggingface_hub import HfApi
 
 from lerobot import available_datasets
-from lerobot_mini.datasets.lerobot_dataset import LeRobotDatasetMetadata
-from lerobot_mini.datasets.utils import INFO_PATH, write_info
-from lerobot_mini.datasets.v21.convert_dataset_v20_to_v21 import V20, SuppressWarnings
+from robodeploy.datasets.lerobot_dataset import LeRobotDatasetMetadata
+from robodeploy.datasets.utils import INFO_PATH, write_info
+from robodeploy.datasets.v21.convert_dataset_v20_to_v21 import V20, SuppressWarnings
 
 LOCAL_DIR = Path("data/")
 

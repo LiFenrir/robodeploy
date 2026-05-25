@@ -19,19 +19,19 @@ We do not want to import all the dependencies, but instead we keep it lightweigh
 
 Example:
     ```python
-        import lerobot_mini
-        print(lerobot_mini.available_datasets)
-        print(lerobot_mini.available_datasets_per_env)
-        print(lerobot_mini.available_real_world_datasets)
-        print(lerobot_mini.available_robots)
-        print(lerobot_mini.available_cameras)
-        print(lerobot_mini.available_motors)
+        import robodeploy
+        print(robodeploy.available_datasets)
+        print(robodeploy.available_datasets_per_env)
+        print(robodeploy.available_real_world_datasets)
+        print(robodeploy.available_robots)
+        print(robodeploy.available_cameras)
+        print(robodeploy.available_motors)
     ```
 """
 
 import itertools
 
-from lerobot_mini.__version__ import __version__  # noqa: F401
+from robodeploy.__version__ import __version__  # noqa: F401
 
 available_datasets_per_env = {
     "aloha": [
@@ -137,7 +137,7 @@ available_datasets = sorted(
     set(itertools.chain(*available_datasets_per_env.values(), available_real_world_datasets))
 )
 
-# lists all available robots from `lerobot_mini/robots`
+# lists all available robots from `robodeploy/robots`
 available_robots = [
     "koch",
     "koch_bimanual",
@@ -148,13 +148,13 @@ available_robots = [
     "s1_follower",
 ]
 
-# lists all available cameras from `lerobot_mini/cameras`
+# lists all available cameras from `robodeploy/cameras`
 available_cameras = [
     "opencv",
     "intelrealsense",
 ]
 
-# lists all available motors from `lerobot_mini/motors`
+# lists all available motors from `robodeploy/motors`
 available_motors = [
     "dynamixel",
     "feetech",

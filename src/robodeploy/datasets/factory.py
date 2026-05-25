@@ -18,14 +18,14 @@ from pprint import pformat
 
 import torch
 
-from lerobot_mini.configs.default import DatasetConfig
-from lerobot_mini.configs.policies import PreTrainedConfig
-from lerobot_mini.datasets.lerobot_dataset import (
+from robodeploy.configs.default import DatasetConfig
+from robodeploy.configs.policies import PreTrainedConfig
+from robodeploy.datasets.lerobot_dataset import (
     LeRobotDataset,
     LeRobotDatasetMetadata,
     MultiLeRobotDataset,
 )
-from lerobot_mini.datasets.transforms import ImageTransforms
+from robodeploy.datasets.transforms import ImageTransforms
 
 IMAGENET_STATS = {
     "mean": [[[0.485]], [[0.456]], [[0.406]]],  # (c,1,1)

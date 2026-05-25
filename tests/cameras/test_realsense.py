@@ -25,12 +25,12 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from lerobot_mini.cameras.configs import Cv2Rotation
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.cameras.configs import Cv2Rotation
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 pytest.importorskip("pyrealsense2")
 
-from lerobot_mini.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
+from robodeploy.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
 
 TEST_ARTIFACTS_DIR = Path(__file__).parent.parent / "artifacts" / "cameras"
 BAG_FILE_PATH = TEST_ARTIFACTS_DIR / "test_rs.bag"

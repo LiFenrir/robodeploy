@@ -23,7 +23,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 from ..robot import Robot
 from .config_lekiwi import LeKiwiClientConfig

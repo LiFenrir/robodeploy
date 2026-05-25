@@ -30,25 +30,26 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 # Import config modules to trigger draccus ChoiceRegistry registration
-from lerobot_mini.robots import (  # noqa: F401
+from robodeploy.robots import (  # noqa: F401
     bi_s1_follower,
     bi_so100_follower,
     s1_follower,
     so100_follower,
 )
-from lerobot_mini.teleoperators import (  # noqa: F401
+from robodeploy.teleoperators import (  # noqa: F401
     bi_s1_leader,
     bi_so100_leader,
     s1_leader,
     so100_leader,
 )
-from lerobot_mini.policy_clients import (  # noqa: F401
+from robodeploy.policy_clients import (  # noqa: F401
+    lingbot,
     openpi,
 )
 
-from lerobot_mini.policy_clients import PolicyClientConfig
-from lerobot_mini.robots import RobotConfig
-from lerobot_mini.teleoperators import TeleoperatorConfig
+from robodeploy.policy_clients import PolicyClientConfig
+from robodeploy.robots import RobotConfig
+from robodeploy.teleoperators import TeleoperatorConfig
 
 
 @dataclass

@@ -14,7 +14,7 @@
 
 from dataclasses import dataclass, field
 
-from lerobot_mini.cameras import CameraConfig
+from robodeploy.cameras import CameraConfig
 
 from ..config import RobotConfig
 

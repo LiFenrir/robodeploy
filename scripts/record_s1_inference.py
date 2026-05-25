@@ -59,31 +59,32 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # Register camera / robot / teleop / policy types with draccus ChoiceRegistry
-from lerobot_mini.cameras import CameraConfig  # noqa: F401, E402
-from lerobot_mini.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401, E402
-from lerobot_mini.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401, E402
-from lerobot_mini.robots import (  # noqa: F401, E402
+from robodeploy.cameras import CameraConfig  # noqa: F401, E402
+from robodeploy.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401, E402
+from robodeploy.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401, E402
+from robodeploy.robots import (  # noqa: F401, E402
     bi_s1_follower,
     bi_so100_follower,
     s1_follower,
     so100_follower,
 )
-from lerobot_mini.teleoperators import (  # noqa: F401, E402
+from robodeploy.teleoperators import (  # noqa: F401, E402
     bi_s1_leader,
     bi_so100_leader,
     s1_leader,
     so100_leader,
 )
-from lerobot_mini.policy_clients import (  # noqa: F401, E402
+from robodeploy.policy_clients import (  # noqa: F401, E402
     openpi,
 )
-from lerobot_mini.webui.server import WebUIServer
-from lerobot_mini.utils.stream_buffer import StreamActionBuffer  # noqa: F401, E402
-from lerobot_mini.utils.leader_follower_align import (  # noqa: F401, E402
+from robodeploy.webui.server import WebUIServer
+from robodeploy.cameras.utils import stack_front_cameras  # noqa: F401, E402
+from robodeploy.utils.stream_buffer import StreamActionBuffer  # noqa: F401, E402
+from robodeploy.utils.leader_follower_align import (  # noqa: F401, E402
     interpolate_leader_to_follower,
     reset_to_zero,
 )
-from lerobot_mini.utils.keyboard_control import get_keypress, prompt_success_failure  # noqa: F401, E402
+from robodeploy.utils.keyboard_control import get_keypress, prompt_success_failure  # noqa: F401, E402
 
 SENTINEL = None
 
@@ -501,8 +502,10 @@ def _start_inference_thread(
                 continue
 
             try:
-                state = np.array([obs.get(k, 0.0) for k in action_features], dtype=np.float64)
-                images = {cam: np.asarray(obs[cam]) for cam in camera_names if cam in obs}
+                obs_stacked = {**obs}  # shallow copy for inference, keep original for recording
+                stack_front_cameras(obs_stacked)
+                state = np.array([obs_stacked.get(k, 0.0) for k in action_features], dtype=np.float64)
+                images = {cam: np.asarray(obs_stacked[cam]) for cam in camera_names if cam in obs_stacked}
 
                 result = policy.infer(images, state, task)
                 actions = result.get("actions", None)
@@ -606,10 +609,10 @@ def record_loop(
 
 def run_record(cfg) -> None:
     """Main entry point, receives a RecordConfig from draccus."""
-    from lerobot_mini.robots import make_robot_from_config
-    from lerobot_mini.teleoperators import make_teleoperator_from_config
-    from lerobot_mini.policy_clients import make_policy_client_from_config
-    from lerobot_mini.datasets.utils import hw_to_dataset_features
+    from robodeploy.robots import make_robot_from_config
+    from robodeploy.teleoperators import make_teleoperator_from_config
+    from robodeploy.policy_clients import make_policy_client_from_config
+    from robodeploy.datasets.utils import hw_to_dataset_features
 
     # Create robot
     robot = make_robot_from_config(cfg.robot)
@@ -958,7 +961,7 @@ def run_record(cfg) -> None:
 
 
 def main() -> None:
-    from lerobot_mini.configs.parser import wrap
+    from robodeploy.configs.parser import wrap
     from scripts.record_config import RecordConfig
 
     @wrap()

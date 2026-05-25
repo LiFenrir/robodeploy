@@ -21,7 +21,7 @@ from typing import Any
 
 import numpy as np
 
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 from ..teleoperator import Teleoperator
 from .config_bi_s1_leader import BiS1LeaderConfig

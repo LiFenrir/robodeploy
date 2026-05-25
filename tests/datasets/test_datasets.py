@@ -27,12 +27,12 @@ from huggingface_hub import HfApi
 from PIL import Image
 from safetensors.torch import load_file
 
-from lerobot_mini.datasets.image_writer import image_array_to_pil_image
-from lerobot_mini.datasets.lerobot_dataset import (
+from robodeploy.datasets.image_writer import image_array_to_pil_image
+from robodeploy.datasets.lerobot_dataset import (
     LeRobotDataset,
     MultiLeRobotDataset,
 )
-from lerobot_mini.datasets.utils import (
+from robodeploy.datasets.utils import (
     create_branch,
     flatten_dict,
     unflatten_dict,
@@ -456,7 +456,7 @@ def test_create_branch():
 
 def test_dataset_feature_with_forward_slash_raises_error():
     # make sure dir does not exist
-    from lerobot_mini.constants import HF_LEROBOT_HOME
+    from robodeploy.constants import HF_LEROBOT_HOME
 
     dataset_dir = HF_LEROBOT_HOME / "lerobot/test/with/slash"
     # make sure does not exist

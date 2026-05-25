@@ -15,7 +15,7 @@
 import logging
 from pprint import pformat
 
-from lerobot_mini.robots import RobotConfig
+from robodeploy.robots import RobotConfig
 
 from .robot import Robot
 

@@ -21,8 +21,8 @@ from typing import Any
 
 import numpy as np
 
-from lerobot_mini.cameras.utils import make_cameras_from_configs
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.cameras.utils import make_cameras_from_configs
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 from ..robot import Robot
 from .config_s1_follower import S1FollowerConfig

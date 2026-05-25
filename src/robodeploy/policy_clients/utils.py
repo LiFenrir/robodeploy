@@ -13,8 +13,8 @@
 # limitations under the License.
 """Factory function for creating policy clients from configuration."""
 
-from lerobot_mini.policy_clients.base import PolicyClient
-from lerobot_mini.policy_clients.config import PolicyClientConfig
+from robodeploy.policy_clients.base import PolicyClient
+from robodeploy.policy_clients.config import PolicyClientConfig
 
 
 def make_policy_client_from_config(config: PolicyClientConfig) -> PolicyClient:
@@ -30,8 +30,12 @@ def make_policy_client_from_config(config: PolicyClientConfig) -> PolicyClient:
         ValueError: If the config type is not recognized.
     """
     if config.type == "openpi":
-        from lerobot_mini.policy_clients.openpi import OpenPIPolicyClient
+        from robodeploy.policy_clients.openpi import OpenPIPolicyClient
 
         return OpenPIPolicyClient(config)
+    elif config.type == "lingbot":
+        from robodeploy.policy_clients.lingbot import LingbotPolicyClient
+
+        return LingbotPolicyClient(config)
     else:
         raise ValueError(f"Unknown policy client type: {config.type}")

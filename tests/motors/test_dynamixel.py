@@ -21,10 +21,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from lerobot_mini.motors import Motor, MotorCalibration, MotorNormMode
-from lerobot_mini.motors.dynamixel import MODEL_NUMBER_TABLE, DynamixelMotorsBus
-from lerobot_mini.motors.dynamixel.tables import X_SERIES_CONTROL_TABLE
-from lerobot_mini.utils.encoding_utils import encode_twos_complement
+from robodeploy.motors import Motor, MotorCalibration, MotorNormMode
+from robodeploy.motors.dynamixel import MODEL_NUMBER_TABLE, DynamixelMotorsBus
+from robodeploy.motors.dynamixel.tables import X_SERIES_CONTROL_TABLE
+from robodeploy.utils.encoding_utils import encode_twos_complement
 
 try:
     import dynamixel_sdk as dxl

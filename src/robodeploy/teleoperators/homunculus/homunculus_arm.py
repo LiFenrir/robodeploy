@@ -22,9 +22,9 @@ from typing import Deque
 
 import serial
 
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
-from lerobot_mini.motors.motors_bus import MotorCalibration, MotorNormMode
-from lerobot_mini.utils.utils import enter_pressed, move_cursor_up
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.motors.motors_bus import MotorCalibration, MotorNormMode
+from robodeploy.utils.utils import enter_pressed, move_cursor_up
 
 from ..teleoperator import Teleoperator
 from .config_homunculus import HomunculusArmConfig

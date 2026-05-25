@@ -18,8 +18,8 @@ policy inference services (e.g., OpenPI, WAM).
 
 Example:
     ```python
-    from lerobot_mini.policy_clients import PolicyClient
-    from lerobot_mini.policy_clients.openpi import OpenPIClient
+    from robodeploy.policy_clients import PolicyClient
+    from robodeploy.policy_clients.openpi import OpenPIClient
 
     client = OpenPIClient(host="localhost", port=8000)
     actions = client.infer(observation)

@@ -5,8 +5,8 @@ from typing import Dict, Optional, Tuple
 from typing_extensions import override
 import websockets.sync.client
 
-from lerobot_mini.policy_clients.openpi import base_policy as _base_policy
-from lerobot_mini.policy_clients.openpi import msgpack_numpy
+from robodeploy.policy_clients.openpi import base_policy as _base_policy
+from robodeploy.policy_clients.openpi import msgpack_numpy
 
 
 class WebsocketClientPolicy(_base_policy.BasePolicy):

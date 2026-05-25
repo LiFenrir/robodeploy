@@ -17,9 +17,9 @@
 import logging
 import time
 
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
-from lerobot_mini.motors import Motor, MotorCalibration, MotorNormMode
-from lerobot_mini.motors.dynamixel import (
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.motors import Motor, MotorCalibration, MotorNormMode
+from robodeploy.motors.dynamixel import (
     DriveMode,
     DynamixelMotorsBus,
     OperatingMode,

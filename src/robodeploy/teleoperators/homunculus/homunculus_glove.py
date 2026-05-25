@@ -22,11 +22,11 @@ from typing import Deque
 
 import serial
 
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
-from lerobot_mini.motors import MotorCalibration
-from lerobot_mini.motors.motors_bus import MotorNormMode
-from lerobot_mini.teleoperators.homunculus.joints_translation import homunculus_glove_to_hope_jr_hand
-from lerobot_mini.utils.utils import enter_pressed, move_cursor_up
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.motors import MotorCalibration
+from robodeploy.motors.motors_bus import MotorNormMode
+from robodeploy.teleoperators.homunculus.joints_translation import homunculus_glove_to_hope_jr_hand
+from robodeploy.utils.utils import enter_pressed, move_cursor_up
 
 from ..teleoperator import Teleoperator
 from .config_homunculus import HomunculusGloveConfig

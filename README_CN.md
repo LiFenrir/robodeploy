@@ -16,7 +16,7 @@
 
 ```
 robodeploy/
-├── src/lerobot_mini/         # 核心包：cameras, datasets, motors, robots, teleoperators, webui
+├── src/robodeploy/         # 核心包：cameras, datasets, motors, robots, teleoperators, webui
 ├── scripts/                   # 数据采集与推理脚本
 ├── deploy/                    # 部署工具：piper_deploy.py, ROS launch, data_collection
 ├── tests/                     # pytest 测试套件
@@ -52,7 +52,7 @@ ruff format src/ tests/                # 代码格式化
 ### 启动 Web 界面
 
 ```bash
-python -m lerobot_mini.webui           # 默认地址 http://localhost:5000
+python -m robodeploy.webui           # 默认地址 http://localhost:5000
 ```
 
 ### 数据采集
@@ -95,7 +95,7 @@ python scripts/record_hybrid.py \
 - **行宽 110 字符**
 - **Google 风格 docstring**
 - **Apache 2.0 协议头** 在每个 `.py` 文件
-- **`src` 布局** — 导入路径 `from lerobot_mini import ...`
+- **`src` 布局** — 导入路径 `from robodeploy import ...`
 
 ## 注意事项
 

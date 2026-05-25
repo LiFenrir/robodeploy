@@ -12,8 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from lerobot_mini.policy_clients.base import PolicyClient
-from lerobot_mini.policy_clients.config import PolicyClientConfig
-from lerobot_mini.policy_clients.utils import make_policy_client_from_config
+from robodeploy.policy_clients.base import PolicyClient
+from robodeploy.policy_clients.config import PolicyClientConfig
+from robodeploy.policy_clients.utils import make_policy_client_from_config
+from robodeploy.policy_clients.lingbot import LingbotPolicyClient, LingbotPolicyClientConfig
 
-__all__ = ["PolicyClient", "PolicyClientConfig", "make_policy_client_from_config"]
+__all__ = [
+    "PolicyClient",
+    "PolicyClientConfig",
+    "make_policy_client_from_config",
+    "LingbotPolicyClient",
+    "LingbotPolicyClientConfig",
+]

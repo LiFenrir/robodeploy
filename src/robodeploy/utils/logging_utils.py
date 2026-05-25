@@ -15,7 +15,7 @@
 # limitations under the License.
 from typing import Any
 
-from lerobot_mini.utils.utils import format_big_number
+from robodeploy.utils.utils import format_big_number
 
 
 class AverageMeter:

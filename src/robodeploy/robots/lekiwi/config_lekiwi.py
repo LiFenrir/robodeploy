@@ -14,8 +14,8 @@
 
 from dataclasses import dataclass, field
 
-from lerobot_mini.cameras.configs import CameraConfig, Cv2Rotation
-from lerobot_mini.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+from robodeploy.cameras.configs import CameraConfig, Cv2Rotation
+from robodeploy.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 
 from ..config import RobotConfig
 

@@ -46,7 +46,7 @@ if "LEROBOT_HOME" in os.environ:
     )
 
 # cache dir
-default_cache_path = Path(HF_HOME) / "lerobot_mini"
+default_cache_path = Path(HF_HOME) / "robodeploy"
 HF_LEROBOT_HOME = Path(os.getenv("HF_LEROBOT_HOME", default_cache_path)).expanduser()
 
 # calibration dir

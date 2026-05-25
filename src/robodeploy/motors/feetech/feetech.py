@@ -17,7 +17,7 @@ from copy import deepcopy
 from enum import Enum
 from pprint import pformat
 
-from lerobot_mini.utils.encoding_utils import decode_sign_magnitude, encode_sign_magnitude
+from robodeploy.utils.encoding_utils import decode_sign_magnitude, encode_sign_magnitude
 
 from ..motors_bus import Motor, MotorCalibration, MotorsBus, NameOrID, Value, get_address
 from .tables import (

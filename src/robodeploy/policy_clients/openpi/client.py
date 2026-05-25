@@ -19,8 +19,8 @@ from typing import Any
 
 import numpy as np
 
-from lerobot_mini.policy_clients.base import PolicyClient
-from lerobot_mini.policy_clients.openpi.config import OpenPIPolicyClientConfig
+from robodeploy.policy_clients.base import PolicyClient
+from robodeploy.policy_clients.openpi.config import OpenPIPolicyClientConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class OpenPIPolicyClient(PolicyClient):
     """Async inference client wrapping OpenPI WebSocket policy with image preprocessing."""
 
     def __init__(self, config: OpenPIPolicyClientConfig):
-        from lerobot_mini.policy_clients.openpi import WebsocketClientPolicy
+        from robodeploy.policy_clients.openpi import WebsocketClientPolicy
 
         self._lock = threading.Lock()
         self._policy = None
@@ -61,7 +61,7 @@ class OpenPIPolicyClient(PolicyClient):
             return {}
 
         import cv2
-        from lerobot_mini.policy_clients.openpi import resize_with_pad
+        from robodeploy.policy_clients.openpi import resize_with_pad
 
         rgb_images = {}
         for cam_name, img in images.items():

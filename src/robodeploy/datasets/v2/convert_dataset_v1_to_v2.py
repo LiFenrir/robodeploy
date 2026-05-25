@@ -119,7 +119,7 @@ from huggingface_hub import HfApi
 from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
 from safetensors.torch import load_file
 
-from lerobot_mini.datasets.utils import (
+from robodeploy.datasets.utils import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_PARQUET_PATH,
     DEFAULT_VIDEO_PATH,
@@ -136,12 +136,12 @@ from lerobot_mini.datasets.utils import (
     write_json,
     write_jsonlines,
 )
-from lerobot_mini.datasets.video_utils import (
+from robodeploy.datasets.video_utils import (
     VideoFrame,  # noqa: F401
     get_image_pixel_channels,
     get_video_info,
 )
-from lerobot_mini.robots import RobotConfig
+from robodeploy.robots import RobotConfig
 
 V16 = "v1.6"
 V20 = "v2.0"
@@ -602,19 +602,19 @@ def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:
         raise NotImplementedError  # TODO
 
     elif robot_type == "koch_follower":
-        from lerobot_mini.robots.koch_follower import KochFollowerConfig
+        from robodeploy.robots.koch_follower import KochFollowerConfig
 
         return KochFollowerConfig(**kwargs)
     elif robot_type == "so100_follower":
-        from lerobot_mini.robots.so100_follower import SO100FollowerConfig
+        from robodeploy.robots.so100_follower import SO100FollowerConfig
 
         return SO100FollowerConfig(**kwargs)
     elif robot_type == "stretch":
-        from lerobot_mini.robots.stretch3 import Stretch3RobotConfig
+        from robodeploy.robots.stretch3 import Stretch3RobotConfig
 
         return Stretch3RobotConfig(**kwargs)
     elif robot_type == "lekiwi":
-        from lerobot_mini.robots.lekiwi import LeKiwiConfig
+        from robodeploy.robots.lekiwi import LeKiwiConfig
 
         return LeKiwiConfig(**kwargs)
     else:

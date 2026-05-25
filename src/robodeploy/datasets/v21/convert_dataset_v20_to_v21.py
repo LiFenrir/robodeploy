@@ -36,9 +36,9 @@ import logging
 
 from huggingface_hub import HfApi
 
-from lerobot_mini.datasets.lerobot_dataset import CODEBASE_VERSION, LeRobotDataset
-from lerobot_mini.datasets.utils import EPISODES_STATS_PATH, STATS_PATH, load_stats, write_info
-from lerobot_mini.datasets.v21.convert_stats import check_aggregate_stats, convert_stats
+from robodeploy.datasets.lerobot_dataset import CODEBASE_VERSION, LeRobotDataset
+from robodeploy.datasets.utils import EPISODES_STATS_PATH, STATS_PATH, load_stats, write_info
+from robodeploy.datasets.v21.convert_stats import check_aggregate_stats, convert_stats
 
 V20 = "v2.0"
 V21 = "v2.1"

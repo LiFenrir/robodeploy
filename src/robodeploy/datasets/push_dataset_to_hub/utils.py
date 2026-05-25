@@ -22,7 +22,7 @@ import numpy
 import PIL
 import torch
 
-from lerobot_mini.datasets.video_utils import encode_video_frames
+from robodeploy.datasets.video_utils import encode_video_frames
 
 
 def concatenate_episodes(ep_dicts):

@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from lerobot_mini.robots.so100_follower import (
+from robodeploy.robots.so100_follower import (
     SO100Follower,
     SO100FollowerConfig,
 )

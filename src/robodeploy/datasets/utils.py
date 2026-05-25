@@ -35,13 +35,13 @@ from huggingface_hub.errors import RevisionNotFoundError
 from PIL import Image as PILImage
 from torchvision import transforms
 
-from lerobot_mini.configs.types import DictLike, FeatureType, PolicyFeature
-from lerobot_mini.datasets.backward_compatibility import (
+from robodeploy.configs.types import DictLike, FeatureType, PolicyFeature
+from robodeploy.datasets.backward_compatibility import (
     V21_MESSAGE,
     BackwardCompatibilityError,
     ForwardCompatibilityError,
 )
-from lerobot_mini.utils.utils import is_valid_numpy_dtype_string
+from robodeploy.utils.utils import is_valid_numpy_dtype_string
 
 DEFAULT_CHUNK_SIZE = 1000  # Max number of episodes per chunk
 

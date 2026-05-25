@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from lerobot_mini.motors.motors_bus import (
+from robodeploy.motors.motors_bus import (
     Motor,
     MotorNormMode,
     assert_same_address,

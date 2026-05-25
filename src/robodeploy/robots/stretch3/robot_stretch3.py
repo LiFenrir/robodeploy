@@ -21,9 +21,9 @@ from stretch_body.gamepad_teleop import GamePadTeleop
 from stretch_body.robot import Robot as StretchAPI
 from stretch_body.robot_params import RobotParams
 
-from lerobot_mini.cameras.utils import make_cameras_from_configs
-from lerobot_mini.constants import OBS_IMAGES, OBS_STATE
-from lerobot_mini.datasets.utils import get_nested_item
+from robodeploy.cameras.utils import make_cameras_from_configs
+from robodeploy.constants import OBS_IMAGES, OBS_STATE
+from robodeploy.datasets.utils import get_nested_item
 
 from ..robot import Robot
 from .configuration_stretch3 import Stretch3RobotConfig

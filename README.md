@@ -18,7 +18,7 @@ Robotics deployment & data collection toolkit — based on LeRobot, adapted for 
 
 ```
 robodeploy/
-├── src/lerobot_mini/         # core package: cameras, datasets, motors, robots, teleoperators, webui
+├── src/robodeploy/         # core package: cameras, datasets, motors, robots, teleoperators, webui
 ├── scripts/                   # data collection & inference scripts
 ├── deploy/                    # deployment: piper_deploy.py, ROS launch, data_collection
 ├── tests/                     # pytest suite
@@ -54,7 +54,7 @@ ruff format src/ tests/
 ### Start WebUI
 
 ```bash
-python -m lerobot_mini.webui           # defaults to http://localhost:5000
+python -m robodeploy.webui           # defaults to http://localhost:5000
 ```
 
 ### Record data
@@ -97,7 +97,7 @@ See [scripts/README.md](scripts/README.md) for details.
 - **110-char line width**
 - **Google-style docstrings**
 - **Apache 2.0 header** on every `.py` file
-- **`src` layout** — import from `from lerobot_mini import ...`
+- **`src` layout** — import from `from robodeploy import ...`
 
 ## Notes
 

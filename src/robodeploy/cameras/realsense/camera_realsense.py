@@ -27,9 +27,9 @@ import numpy as np
 try:
     import pyrealsense2 as rs
 except Exception as e:
-    logging.info(f"Could not import realsense: {e}")
+    raise ImportError(f"pyrealsense2 is not installed or failed to import: {e}") from e
 
-from lerobot_mini.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 from ..camera import Camera
 from ..configs import ColorMode
@@ -63,8 +63,8 @@ class RealSenseCamera(Camera):
 
     Example:
         ```python
-        from lerobot_mini.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
-        from lerobot_mini.cameras import ColorMode, Cv2Rotation
+        from robodeploy.cameras.realsense import RealSenseCamera, RealSenseCameraConfig
+        from robodeploy.cameras import ColorMode, Cv2Rotation
 
         # Basic usage with serial number
         config = RealSenseCameraConfig(serial_number_or_name="0123456789") # Replace with actual SN

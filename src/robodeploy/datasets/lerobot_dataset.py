@@ -30,10 +30,10 @@ from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.constants import REPOCARD_NAME
 from huggingface_hub.errors import RevisionNotFoundError
 
-from lerobot_mini.constants import HF_LEROBOT_HOME
-from lerobot_mini.datasets.compute_stats import aggregate_stats, compute_episode_stats
-from lerobot_mini.datasets.image_writer import AsyncImageWriter, write_image
-from lerobot_mini.datasets.utils import (
+from robodeploy.constants import HF_LEROBOT_HOME
+from robodeploy.datasets.compute_stats import aggregate_stats, compute_episode_stats
+from robodeploy.datasets.image_writer import AsyncImageWriter, write_image
+from robodeploy.datasets.utils import (
     DEFAULT_FEATURES,
     DEFAULT_IMAGE_PATH,
     INFO_PATH,
@@ -65,7 +65,7 @@ from lerobot_mini.datasets.utils import (
     write_info,
     write_json,
 )
-from lerobot_mini.datasets.video_utils import (
+from robodeploy.datasets.video_utils import (
     VideoFrame,
     decode_video_frames,
     encode_video_frames,

@@ -22,7 +22,7 @@ import logging
 from copy import deepcopy
 from enum import Enum
 
-from lerobot_mini.utils.encoding_utils import decode_twos_complement, encode_twos_complement
+from robodeploy.utils.encoding_utils import decode_twos_complement, encode_twos_complement
 
 from ..motors_bus import Motor, MotorCalibration, MotorsBus, NameOrID, Value, get_address
 from .tables import (

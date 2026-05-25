@@ -2,9 +2,9 @@ import logging
 import threading
 import time
 
-from lerobot_mini.policy_clients.openpi.runtime import agent as _agent
-from lerobot_mini.policy_clients.openpi.runtime import environment as _environment
-from lerobot_mini.policy_clients.openpi.runtime import subscriber as _subscriber
+from robodeploy.policy_clients.openpi.runtime import agent as _agent
+from robodeploy.policy_clients.openpi.runtime import environment as _environment
+from robodeploy.policy_clients.openpi.runtime import subscriber as _subscriber
 
 
 class Runtime:
