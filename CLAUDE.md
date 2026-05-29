@@ -39,7 +39,7 @@ Three pluggable interfaces connected by `draccus.ChoiceRegistry` (dataclass-base
 
 New robot/teleoperator types are auto-discovered — just place a package under `robots/` or `teleoperators/` with a config class that inherits from the base `*Config`.
 
-### Data recording pipeline (`scripts/record_s1_inference_npy.py`)
+### Data recording pipeline (`scripts/record_dataset.py`)
 
 Main entry point for data collection. The 30fps control loop runs three phases per tick:
 1. `robot.get_obs()` → populate `state_ref["obs"]` and camera images

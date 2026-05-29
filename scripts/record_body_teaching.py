@@ -2,7 +2,7 @@
 """
 Body-teaching data collection + inference script with NPY-based storage backend.
 
-Same features as record_s1_inference_npy.py but designed for body-teaching robots
+Same features as record_dataset.py but designed for body-teaching robots
 (本体示教) where the same physical arm serves as both the teaching device (human
 backdrives it in gravity compensation mode) and the execution device (policy
 commands joint positions). No separate teleoperator hardware needed.

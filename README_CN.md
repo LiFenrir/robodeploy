@@ -59,7 +59,7 @@ python -m robodeploy.webui           # 默认地址 http://localhost:5000
 
 ```bash
 # 双臂 S1 — 纯遥操作（NPY 存储，O(1) 内存）
-python scripts/record_s1_inference_npy.py \
+python scripts/record_dataset.py \
     --robot.type=bi_s1_follower \
     --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
     --teleop.type=bi_s1_leader \
@@ -68,7 +68,7 @@ python scripts/record_s1_inference_npy.py \
     --task="pick and place"
 
 # 混合模式 — 策略推理 + 遥操作（P 键切换）
-python scripts/record_s1_inference_npy.py \
+python scripts/record_dataset.py \
     --robot.type=bi_s1_follower \
     --teleop.type=bi_s1_leader \
     --policy.type=openpi \

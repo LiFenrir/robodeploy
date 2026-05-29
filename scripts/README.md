@@ -6,7 +6,7 @@
 
 | 入口 | 用途 |
 |------|------|
-| `python record_s1_inference_npy.py` | S1/SO100 遥操作 + 策略推理（NPY 存储，O(1) 内存） |
+| `python record_dataset.py` | S1/SO100 遥操作 + 策略推理（NPY 存储，O(1) 内存） |
 | `python record_body_teaching.py` | 本体示教（ARX X5 等，无独立遥操作器） |
 
 ## 功能
@@ -21,7 +21,7 @@
 ## 架构
 
 ```
-record_s1_inference_npy.py
+record_dataset.py
         │
 键盘监听 ──(P/R/S/Z/Esc)──→ 主循环 (30fps)
                                 │
@@ -102,7 +102,7 @@ record_s1_inference_npy.py
 ### 双臂 S1 + mixed 模式（可 P 键切换）
 
 ```bash
-python record_s1_inference_npy.py \
+python record_dataset.py \
     --robot.type=bi_s1_follower \
     --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
     --robot.cameras='{"front":{"type":"intelrealsense","width":848,"height":480,"fps":30}}' \
@@ -116,7 +116,7 @@ python record_s1_inference_npy.py \
 ### 纯遥操作（无需 OpenPI）
 
 ```bash
-python record_s1_inference_npy.py \
+python record_dataset.py \
     --robot.type=bi_s1_follower \
     --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
     --robot.cameras='{"front":{...}}' \
@@ -129,7 +129,7 @@ python record_s1_inference_npy.py \
 ### 纯策略推理（无需遥操臂）
 
 ```bash
-python record_s1_inference_npy.py \
+python record_dataset.py \
     --robot.type=bi_s1_follower \
     --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
     --robot.cameras='{"front":{...}}' \
@@ -141,7 +141,7 @@ python record_s1_inference_npy.py \
 ### 单臂 S1
 
 ```bash
-python record_s1_inference_npy.py \
+python record_dataset.py \
     --robot.type=s1_follower --robot.port=/dev/ttyUSB0 \
     --teleop.type=s1_leader --teleop.port=/dev/ttyUSB2 \
     --robot.cameras='{"front":{...}}' \

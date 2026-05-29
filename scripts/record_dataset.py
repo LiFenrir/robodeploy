@@ -26,7 +26,7 @@ Features:
 
 Usage:
     # S1 bimanual (cameras configured via robot.cameras)
-    python record_s1_inference_npy.py \
+    python record_dataset.py \
         --robot.type=bi_s1_follower \
         --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
         --robot.cameras='{"front":{"type":"intelrealsense","width":848,"height":480,"fps":30}}' \
@@ -37,7 +37,7 @@ Usage:
         --task="fold the box"
 
     # Single arm S1
-    python record_s1_inference_npy.py \
+    python record_dataset.py \
         --robot.type=s1_follower \
         --robot.port=/dev/ttyUSB0 \
         --robot.cameras='{"front":{"type":"intelrealsense","width":848,"height":480,"fps":30}}' \

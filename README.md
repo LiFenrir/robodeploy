@@ -61,7 +61,7 @@ python -m robodeploy.webui           # defaults to http://localhost:5000
 
 ```bash
 # Bimanual S1 — pure teleoperation (NPY storage, O(1) RAM)
-python scripts/record_s1_inference_npy.py \
+python scripts/record_dataset.py \
     --robot.type=bi_s1_follower \
     --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
     --teleop.type=bi_s1_leader \
@@ -70,7 +70,7 @@ python scripts/record_s1_inference_npy.py \
     --task="pick and place"
 
 # Mixed mode — policy inference + teleop (P key to toggle)
-python scripts/record_s1_inference_npy.py \
+python scripts/record_dataset.py \
     --robot.type=bi_s1_follower \
     --teleop.type=bi_s1_leader \
     --policy.type=openpi \
