@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import av
+import numpy as np
 import pyarrow as pa
 import torch
 import torchvision
@@ -263,7 +264,7 @@ def encode_video_frames(
     video_path = Path(video_path)
     imgs_dir = Path(imgs_dir)
 
-    video_path.parent.mkdir(parents=True, exist_ok=overwrite)
+    video_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Encoders/pixel formats incompatibility check
     if (vcodec == "libsvtav1" or vcodec == "hevc") and pix_fmt == "yuv444p":
@@ -324,6 +325,90 @@ def encode_video_frames(
             output.mux(packet)
 
     # Reset logging level
+    if log_level is not None:
+        av.logging.restore_default_callback()
+
+    if not video_path.exists():
+        raise OSError(f"Video encoding did not work. File not found: {video_path}.")
+
+
+def encode_video_from_npy(
+    npy_dir: Path | str,
+    video_path: Path | str,
+    fps: int,
+    vcodec: str = "libsvtav1",
+    pix_fmt: str = "yuv420p",
+    crf: int = 30,
+    log_level: int | None = av.logging.ERROR,
+    overwrite: bool = False,
+) -> None:
+    """Encode a directory of frame_*.npy files to MP4. Reads one frame at a time -- O(1) RAM."""
+    if vcodec not in ["h264", "hevc", "libsvtav1"]:
+        raise ValueError(
+            f"Unsupported video codec: {vcodec}. Supported codecs are: h264, hevc, libsvtav1."
+        )
+
+    video_path = Path(video_path)
+    npy_dir = Path(npy_dir)
+
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if (vcodec == "libsvtav1" or vcodec == "hevc") and pix_fmt == "yuv444p":
+        logging.warning(
+            f"Incompatible pixel format 'yuv444p' for codec {vcodec}, auto-selecting format 'yuv420p'"
+        )
+        pix_fmt = "yuv420p"
+
+    template = "frame_" + ("[0-9]" * 6) + ".npy"
+    input_list = sorted(
+        glob.glob(str(npy_dir / template)),
+        key=lambda x: int(x.split("_")[-1].split(".")[0]),
+    )
+
+    if len(input_list) == 0:
+        raise FileNotFoundError(f"No .npy files found in {npy_dir}.")
+
+    first_arr = np.load(input_list[0])
+    if first_arr.ndim == 2:
+        h, w = first_arr.shape
+    elif first_arr.ndim == 3:
+        h, w, c = first_arr.shape
+        if c not in (1, 3, 4):
+            raise ValueError(f"Unsupported number of channels: {c}. Expected 1, 3, or 4.")
+    else:
+        raise ValueError(f"Unexpected array shape: {first_arr.shape}")
+
+    video_options = {}
+    if crf is not None:
+        video_options["crf"] = str(crf)
+
+    if log_level is not None:
+        logging.getLogger("libav").setLevel(log_level)
+
+    with av.open(str(video_path), "w") as output:
+        output_stream = output.add_stream(vcodec, fps, options=video_options)
+        output_stream.pix_fmt = pix_fmt
+        output_stream.width = w
+        output_stream.height = h
+
+        for npy_path in input_list:
+            arr = np.load(npy_path)
+            if arr.ndim == 2:
+                arr = np.stack([arr, arr, arr], axis=-1)
+            elif arr.shape[2] == 1:
+                arr = np.repeat(arr, 3, axis=2)
+            elif arr.shape[2] == 4:
+                arr = arr[:, :, :3]
+
+            frame = av.VideoFrame.from_ndarray(arr, format="rgb24")
+            packet = output_stream.encode(frame)
+            if packet:
+                output.mux(packet)
+
+        packet = output_stream.encode()
+        if packet:
+            output.mux(packet)
+
     if log_level is not None:
         av.logging.restore_default_callback()
 

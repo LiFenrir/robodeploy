@@ -65,6 +65,14 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         from .bi_s1_follower import BiS1Follower
 
         return BiS1Follower(config)
+    elif config.type == "arx_x5":
+        from .arx_x5.arx_x5 import ARXX5Robot
+
+        return ARXX5Robot(config)
+    elif config.type == "bi_arx_x5":
+        from .arx_x5.bi_arx_x5 import BiARXX5Robot
+
+        return BiARXX5Robot(config)
     elif config.type == "s1_follower":
         from .s1_follower import S1Follower
 

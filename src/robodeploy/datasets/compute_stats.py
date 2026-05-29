@@ -54,14 +54,25 @@ def auto_downsample_height_width(img: np.ndarray, target_size: int = 150, max_si
     return img[:, ::downsample_factor, ::downsample_factor]
 
 
+def _load_npy_frame(path: str) -> np.ndarray:
+    """Load a .npy frame saved by the NPY backend. Returns channel-first uint8."""
+    arr = np.load(path)
+    if arr.ndim == 3 and arr.shape[-1] in (1, 3, 4):
+        arr = np.transpose(arr, (2, 0, 1))  # HWC -> CHW
+    return np.asarray(arr, dtype=np.uint8)
+
+
 def sample_images(image_paths: list[str]) -> np.ndarray:
     sampled_indices = sample_indices(len(image_paths))
 
     images = None
     for i, idx in enumerate(sampled_indices):
         path = image_paths[idx]
-        # we load as uint8 to reduce memory usage
-        img = load_image_as_numpy(path, dtype=np.uint8, channel_first=True)
+        path_str = str(path)
+        if path_str.endswith(".npy"):
+            img = _load_npy_frame(path_str)
+        else:
+            img = load_image_as_numpy(path, dtype=np.uint8, channel_first=True)
         img = auto_downsample_height_width(img)
 
         if images is None:

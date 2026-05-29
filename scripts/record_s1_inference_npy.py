@@ -2,7 +2,7 @@
 """
 Unified data collection + inference script with NPY-based storage backend.
 
-Same features as record_s1_inference.py (three control modes, policy inference,
+Three control modes (teleop, policy inference, mixed),
 temporal smoothing, leader-follower alignment, WebUI, labeling) but uses
 LeRobotDataset with NPY intermediate storage instead of in-memory accumulation:
 
@@ -46,10 +46,7 @@ Usage:
         --task="pick and place"
 """
 
-import json
 import logging
-import multiprocessing as mp
-import shutil
 import sys
 import threading
 import time
@@ -88,276 +85,14 @@ from robodeploy.utils.leader_follower_align import (  # noqa: F401, E402
 )
 from robodeploy.utils.keyboard_control import get_keypress, prompt_success_failure  # noqa: F401, E402
 from robodeploy.datasets.lerobot_dataset import LeRobotDataset
-from robodeploy.datasets.utils import build_dataset_frame, hw_to_dataset_features, write_info
+from robodeploy.datasets.npy_backend import BackgroundVideoEncoder, LeRobotDatasetNPY
+from robodeploy.datasets.utils import build_dataset_frame, hw_to_dataset_features
 
 
 class ControlMode(Enum):
     TELEOP = "teleop"
     POLICY = "policy"
     MIXED = "mixed"
-
-
-# ==============================================================================
-# NPY-based video encoder (streaming, O(1) RAM)
-# ==============================================================================
-
-def encode_video_from_npy(npy_dir: Path, dst: Path, fps: int, vcodec: str = "libsvtav1", crf: int = 30) -> None:
-    """Encode a directory of frame_*.npy files to MP4. Reads one frame at a time — O(1) RAM."""
-    import av
-
-    npy_files = sorted(npy_dir.glob("frame_*.npy"))
-    if not npy_files:
-        raise FileNotFoundError(f"No frame_*.npy files found in {npy_dir}")
-
-    first = np.load(str(npy_files[0]))
-    if first.dtype != np.uint8:
-        first = first.astype(np.uint8)
-    h, w = first.shape[:2]
-
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    options = {"crf": str(crf), "preset": "8"}
-
-    with av.open(str(dst), "w") as output:
-        stream = output.add_stream(vcodec, fps, options=options)
-        stream.pix_fmt = "yuv420p"
-        stream.width = w
-        stream.height = h
-
-        for i, fpath in enumerate(npy_files):
-            img = np.load(str(fpath))
-            if img.dtype != np.uint8:
-                img = img.astype(np.uint8)
-            frame = av.VideoFrame.from_ndarray(img, format="rgb24")
-            for pkt in stream.encode(frame):
-                output.mux(pkt)
-            if i > 0 and i % 300 == 0:
-                print(f"    Encoding {npy_dir.name}: {i}/{len(npy_files)}")
-
-        for pkt in stream.encode():
-            output.mux(pkt)
-
-
-# ==============================================================================
-# Background video encoder (mp.Process, async — doesn't block recording)
-# ==============================================================================
-
-def _video_encoder_loop(queue: mp.Queue, info_path: str, video_keys: list[str]) -> None:
-    """Background process: encodes NPY dirs to MP4, cleans up, updates metadata."""
-    while True:
-        item = queue.get()
-        if item is None:
-            break
-        npy_dir, video_path, fps = item
-        try:
-            encode_video_from_npy(npy_dir, video_path, fps)
-            shutil.rmtree(npy_dir, ignore_errors=True)
-            # Update total_videos in info.json
-            if Path(info_path).exists():
-                with open(info_path) as f:
-                    info = json.load(f)
-                info["total_videos"] += 1
-                if info["total_videos"] == 1:
-                    # First video encoded — update video info from the file
-                    from robodeploy.datasets.video_utils import get_video_info
-                    for key in video_keys:
-                        if not info["features"].get(key, {}).get("info"):
-                            vpath = str(Path(info_path).parent.parent / info["video_path"].format(
-                                episode_chunk=0, video_key=key, episode_index=0))
-                            if Path(vpath).is_file():
-                                info["features"][key]["info"] = get_video_info(vpath)
-                with open(info_path, "w") as f:
-                    json.dump(info, f, indent=2)
-            print(f"[Encoder] Video done: {video_path.name}")
-        except Exception as e:
-            print(f"[Encoder] Error encoding {video_path}: {e}")
-            import traceback
-            traceback.print_exc()
-
-
-class BackgroundVideoEncoder:
-    """Manages a background process for async NPY -> MP4 video encoding."""
-
-    def __init__(self, info_path: str, video_keys: list[str]):
-        self.queue: mp.Queue = mp.Queue(maxsize=8)
-        self.info_path = info_path
-        self.video_keys = video_keys
-        self.process = mp.Process(
-            target=_video_encoder_loop,
-            args=(self.queue, info_path, video_keys),
-            daemon=True,
-        )
-        self.process.start()
-        logger.info("[Encoder] Background video encoder started.")
-
-    def submit(self, npy_dir: Path, video_path: Path, fps: int) -> None:
-        """Non-blocking: submit an encoding job."""
-        self.queue.put((npy_dir, video_path, fps))
-
-    def pending(self) -> int:
-        """Number of jobs awaiting encoding."""
-        return self.queue.qsize()
-
-    def shutdown(self) -> None:
-        """Wait for all pending encoding jobs to finish."""
-        pending = self.queue.qsize()
-        if pending > 0:
-            print(f"\n[Encoder] {pending} video(s) pending, waiting for encoding...")
-        self.queue.put(None)
-        print("[Encoder] Waiting for background encoding to complete...")
-        self.process.join(timeout=300)
-        if self.process.is_alive():
-            logger.warning("[Encoder] Process did not exit, terminating.")
-            self.process.terminate()
-        else:
-            print("[Encoder] Encoding finished, all videos saved.")
-
-
-# ==============================================================================
-# LeRobotDataset subclass with NPY intermediate storage (no PNG overhead)
-# ==============================================================================
-
-class LeRobotDatasetNPY(LeRobotDataset):
-    """LeRobotDataset variant that writes raw .npy files instead of PNG.
-
-    Overrides _save_image, _get_image_file_path, and encode_episode_videos.
-    Supports async video encoding via a BackgroundVideoEncoder.
-
-    Use save_episode_async() to write parquet + metadata and hand off video
-    encoding to the background process (non-blocking). The sync save_episode()
-    encodes videos inline if no background encoder is attached.
-    """
-
-    def set_video_encoder(self, encoder: BackgroundVideoEncoder) -> None:
-        """Attach a background video encoder for async encoding."""
-        self._bg_encoder = encoder  # type: ignore[attr-defined]
-
-    def _get_image_file_path(self, episode_index: int, image_key: str, frame_index: int) -> Path:
-        fpath = "images/{image_key}/episode_{episode_index:06d}/frame_{frame_index:06d}.npy"
-        return self.root / fpath.format(
-            image_key=image_key,
-            episode_index=episode_index,
-            frame_index=frame_index,
-        )
-
-    def _save_image(self, image, fpath: Path) -> None:
-        """Write raw numpy array as .npy — no compression, very fast."""
-        if hasattr(image, "cpu"):  # torch.Tensor
-            image = image.cpu().numpy()
-        fpath.parent.mkdir(parents=True, exist_ok=True)
-        np.save(str(fpath), np.asarray(image, dtype=np.uint8))
-
-    def encode_episode_videos(self, episode_index: int) -> None:
-        """Encode NPY frame directories to MP4.
-
-        If a background encoder is attached, submits jobs asynchronously.
-        Otherwise encodes inline (blocking).
-        """
-        for key in self.meta.video_keys:
-            video_path = self.root / self.meta.get_video_file_path(episode_index, key)
-            if video_path.is_file():
-                continue
-            img_dir = self._get_image_file_path(episode_index, key, 0).parent
-            if getattr(self, '_bg_encoder', None) is not None:
-                getattr(self, '_bg_encoder').submit(img_dir, video_path, self.fps)
-            else:
-                encode_video_from_npy(img_dir, video_path, self.fps)
-                shutil.rmtree(img_dir)
-
-        if len(self.meta.video_keys) > 0 and episode_index == 0 and getattr(self, '_bg_encoder', None) is None:
-            self.meta.update_video_info()
-            write_info(self.meta.info, self.meta.root)
-
-    def save_episode_async(self) -> None:
-        """Write parquet + update metadata + reset buffer. Video encoding is handed
-        off to the background encoder (must call set_video_encoder() first).
-
-        This returns immediately — the main thread can start the next episode while
-        the background process encodes videos.
-        """
-        if getattr(self, '_bg_encoder', None) is None:
-            # Fall back to sync encoding
-            self.save_episode()
-            return
-
-        # --- Steps 1-5: buffer processing + parquet write (same as parent) ---
-        episode_buffer = self.episode_buffer
-        episode_length = episode_buffer.pop("size")
-        tasks = episode_buffer.pop("task")
-        episode_tasks = list(set(tasks))
-        episode_index = episode_buffer["episode_index"]
-
-        episode_buffer["index"] = np.arange(
-            self.meta.total_frames, self.meta.total_frames + episode_length
-        )
-        episode_buffer["episode_index"] = np.full((episode_length,), episode_index)
-
-        for task in episode_tasks:
-            if self.meta.get_task_index(task) is None:
-                self.meta.add_task(task)
-        episode_buffer["task_index"] = np.array(
-            [self.meta.get_task_index(t) for t in tasks]
-        )
-
-        from robodeploy.datasets.utils import validate_episode_buffer
-        validate_episode_buffer(episode_buffer, self.meta.total_episodes, self.features)
-
-        for key, ft in self.features.items():
-            if key in ["index", "episode_index", "task_index"] or ft["dtype"] in ["image", "video"]:
-                continue
-            episode_buffer[key] = np.stack(episode_buffer[key])
-
-        self._save_episode_table(episode_buffer, episode_index)
-
-        # Compute stats (state/action only — skip images since they're NPY)
-        from robodeploy.datasets.compute_stats import compute_episode_stats
-        try:
-            ep_stats = compute_episode_stats(episode_buffer, self.features)
-        except Exception:
-            # compute_episode_stats may fail trying to read NPY paths as images;
-            # fall back to state/action-only stats
-            ep_stats = {}
-            for key in episode_buffer:
-                arr = episode_buffer[key]
-                if isinstance(arr, np.ndarray) and arr.dtype.kind in ('f', 'i'):
-                    ep_stats[key] = {
-                        "mean": arr.mean(axis=0).tolist() if arr.ndim > 1 else float(arr.mean()),
-                        "std": arr.std(axis=0).tolist() if arr.ndim > 1 else float(arr.std()),
-                        "min": arr.min(axis=0).tolist() if arr.ndim > 1 else float(arr.min()),
-                        "max": arr.max(axis=0).tolist() if arr.ndim > 1 else float(arr.max()),
-                        "count": [episode_length],
-                    }
-
-        # --- Step 6: Submit video encoding to background ---
-        # Don't increment total_videos yet — the background encoder will.
-        saved_total_videos = self.meta.info.get("total_videos", 0)
-        self.encode_episode_videos(episode_index)
-
-        # --- Step 7: Update metadata ---
-        self.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats)
-        # Restore total_videos (background encoder increments it after each video)
-        self.meta.info["total_videos"] = saved_total_videos
-        write_info(self.meta.info, self.meta.root)
-
-        # --- Step 8: Check timestamps, reset buffer ---
-        from robodeploy.datasets.utils import (
-            check_timestamps_sync,
-            get_episode_data_index,
-        )
-        ep_data_index = get_episode_data_index(self.meta.episodes, [episode_index])
-        ep_data_index_np = {k: t.numpy() for k, t in ep_data_index.items()}
-        check_timestamps_sync(
-            episode_buffer["timestamp"],
-            episode_buffer["episode_index"],
-            ep_data_index_np,
-            self.fps,
-            self.tolerance_s,
-        )
-
-        self.episode_buffer = self.create_episode_buffer()
-
-        pending = getattr(self, '_bg_encoder', None).pending() if getattr(self, '_bg_encoder', None) else 0
-        print(f"[Save] Episode {episode_index}: {episode_length} frames. "
-              f"Video encoding in background ({pending} jobs in queue).")
 
 
 # ==============================================================================

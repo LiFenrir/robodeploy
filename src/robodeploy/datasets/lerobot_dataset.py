@@ -852,6 +852,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
             if key in ["index", "episode_index", "task_index"] or ft["dtype"] in ["image", "video"]:
                 continue
             episode_buffer[key] = np.stack(episode_buffer[key])
+            if ft["shape"] == (1,) and episode_buffer[key].ndim == 2 and episode_buffer[key].shape[-1] == 1:
+                episode_buffer[key] = episode_buffer[key].squeeze(-1)
 
         self._wait_image_writer()
         self._save_episode_table(episode_buffer, episode_index)

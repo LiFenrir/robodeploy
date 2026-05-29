@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Configuration dataclass for record_s1_inference.py.
+"""Configuration dataclass for record_s1_inference_npy.py.
 
 Uses draccus for CLI parsing with nested config support.
 Example:
-    python record_s1_inference.py \
+    python record_s1_inference_npy.py \
         --robot.type=s1_follower \
         --robot.port=/dev/ttyUSB0 \
         --teleop.type=s1_leader \
