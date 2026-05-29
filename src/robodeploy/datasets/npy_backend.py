@@ -8,6 +8,7 @@ Provides LeRobotDatasetNPY (writes raw .npy instead of PNG) and BackgroundVideoE
 import json
 import logging
 import multiprocessing as mp
+import os
 import shutil
 import time
 from pathlib import Path
@@ -25,8 +26,19 @@ logger = logging.getLogger(__name__)
 # Background video encoder (mp.Process, async -- doesn't block recording)
 # ==============================================================================
 
-def _video_encoder_loop(queue: mp.Queue, info_path: str, video_keys: list[str]) -> None:
+def _video_encoder_loop(queue: mp.Queue, info_path: str, video_keys: list[str], log_path: str) -> None:
     """Background process: encodes NPY dirs to MP4, cleans up, updates metadata."""
+    log_file = open(log_path, "a", buffering=1)  # line-buffered
+
+    # Redirect stderr to log file to capture SVT-AV1 and other C-library output
+    os.dup2(log_file.fileno(), 2)
+
+    def _log(msg: str) -> None:
+        ts = time.strftime("%H:%M:%S")
+        log_file.write(f"[Encoder {ts}] {msg}\n")
+
+    _log(f"Started (PID {os.getpid()})")
+
     while True:
         item = queue.get()
         if item is None:
@@ -54,28 +66,30 @@ def _video_encoder_loop(queue: mp.Queue, info_path: str, video_keys: list[str]) 
                                 info["features"][key]["info"] = get_video_info(vpath)
                 with open(info_path, "w") as f:
                     json.dump(info, f, indent=2)
-            print(f"[Encoder] Video done: {video_path.name}")
+            _log(f"Video done: {video_path.name}")
         except Exception as e:
-            print(f"[Encoder] Error encoding {video_path}: {e}")
+            _log(f"Error encoding {video_path}: {e}")
             import traceback
 
-            traceback.print_exc()
+            log_file.write(traceback.format_exc())
+            log_file.flush()
 
 
 class BackgroundVideoEncoder:
     """Manages a background process for async NPY -> MP4 video encoding."""
 
-    def __init__(self, info_path: str, video_keys: list[str]):
+    def __init__(self, info_path: str, video_keys: list[str], log_dir: str | None = None):
         self.queue: mp.Queue = mp.Queue(maxsize=8)
         self.info_path = info_path
         self.video_keys = video_keys
+        log_path = str(Path(log_dir or Path(info_path).parent.parent) / "encoder.log")
         self.process = mp.Process(
             target=_video_encoder_loop,
-            args=(self.queue, info_path, video_keys),
+            args=(self.queue, info_path, video_keys, log_path),
             daemon=True,
         )
         self.process.start()
-        logger.info("[Encoder] Background video encoder started.")
+        logger.info("[Encoder] Background video encoder started (log: %s).", log_path)
 
     def submit(self, npy_dir: Path, video_path: Path, fps: int) -> None:
         """Non-blocking: submit an encoding job."""
@@ -89,7 +103,7 @@ class BackgroundVideoEncoder:
         """Wait for all pending encoding jobs to finish."""
         pending = self.queue.qsize()
         if pending > 0:
-            print(f"\n[Encoder] {pending} video(s) pending, waiting for encoding...")
+            print(f"[Encoder] {pending} video(s) pending, waiting for encoding...")
         self.queue.put(None)
         print("[Encoder] Waiting for background encoding to complete...")
         self.process.join(timeout=300)

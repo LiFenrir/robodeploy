@@ -40,7 +40,7 @@ CAMERAS_JSON='{
 
 # ---------- output ----------
 OUTPUT_DIR="${PROJECT_ROOT}/outputs/arx5"
-REPO_ID="arx_bimanual_$(date +%Y%m%d_%H%M%S)"
+REPO_ID="arx_bimanual_$(date +%m%d_%H%M)"
 TASK="${TASK:-pick and place}"
 
 # ---------- control ----------
