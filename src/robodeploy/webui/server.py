@@ -15,7 +15,6 @@ import json
 import logging
 import struct
 import threading
-import time
 from collections import deque
 from pathlib import Path
 from typing import Any, Callable
@@ -57,7 +56,6 @@ class WebUIServer:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._clients: set = set()
         self._history: deque[dict] = deque(maxlen=20)
-        self._start_time: float | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -257,8 +255,9 @@ class WebUIServer:
         episode = self.recording_ref.get("episode", 0)
 
         elapsed = 0.0
-        if recording and self._start_time is not None:
-            elapsed = time.perf_counter() - self._start_time
+        frames = self.recording_ref.get("frames", 0)
+        if recording and frames > 0:
+            elapsed = frames / self.fps
 
         mode_val = self.state_ref.get("mode", "")
         if hasattr(mode_val, "value"):
@@ -294,8 +293,6 @@ class WebUIServer:
 
     def on_recording_started(self) -> None:
         """Call this when recording starts."""
-        self._start_time = time.perf_counter()
 
     def on_recording_stopped(self) -> None:
         """Call this when recording stops."""
-        self._start_time = None

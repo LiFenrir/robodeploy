@@ -186,11 +186,11 @@ def record_loop(
     obs_lock: threading.Lock,
     task: str,
     on_key: callable = None,
+    process_pending: callable = None,
 ) -> None:
     """Main control loop for body-teaching robots with NPY dataset storage."""
     start_episode_t = time.perf_counter()
     timestamp = 0.0
-    was_recording = recording_ref.get("recording", False)
 
     while timestamp < control_time_s and not stop_ref["stop"]:
         start_loop_t = time.perf_counter()
@@ -198,7 +198,8 @@ def record_loop(
         is_recording = recording_ref.get("recording", False)
         if is_recording and (dataset.episode_buffer or {}).get("size", 0) == 0:
             start_episode_t = time.perf_counter()
-        was_recording = is_recording
+        elif not is_recording:
+            start_episode_t = time.perf_counter()  # keep timestamp near 0 while idle
 
         observation = robot.get_observation()
         with obs_lock:
@@ -212,6 +213,9 @@ def record_loop(
                 on_key(k)
             if stop_ref["stop"]:
                 break
+
+        if process_pending is not None:
+            process_pending()
 
         is_inference = 0
         action = None
@@ -252,7 +256,7 @@ def record_loop(
             switch_hint = "P=switch " if state_ref["control_mode"] == ControlMode.MIXED else ""
             inf_ok = " ERR!" if not state_ref.get("inference_ok", True) else ""
             ep = recording_ref.get("episode", 0)
-            print(f"[{mode_str}{inf_ok}] ep={ep} frames={fc} elapsed={timestamp:.0f}s | {switch_hint}R=rec S=save Esc=quit")
+            print(f"[{mode_str}{inf_ok}] ep={ep} frames={fc} elapsed={fc / fps:.1f}s | {switch_hint}R=rec S=save Esc=quit")
 
 
 # ==============================================================================
@@ -346,7 +350,7 @@ def run_record(cfg) -> None:
     # Create background video encoder and attach to dataset
     info_path = str(dataset_root / "meta" / "info.json")
     video_keys = dataset.meta.video_keys
-    bg_encoder = BackgroundVideoEncoder(info_path, video_keys)
+    bg_encoder = BackgroundVideoEncoder(info_path, video_keys, log_dir=str(dataset_root))
     dataset.set_video_encoder(bg_encoder)
 
     # Policy client — skip for pure COLLECT mode
@@ -372,6 +376,7 @@ def run_record(cfg) -> None:
     }
     recording_ref = {"recording": False, "episode": 0, "frames": 0}
     stop_ref = {"stop": False}
+    pending_ref = {"cmd": None, "data": None}
     obs_lock = threading.Lock()
 
     # Stream buffer
@@ -403,75 +408,89 @@ def run_record(cfg) -> None:
         logger.error("Robot does not support body teaching (no get_action method). Exiting.")
         sys.exit(1)
 
-    # WebUI server
-    webui = None
+    # Shared command handlers — called both from keyboard (main thread) and
+    # WebUI (via pending_ref, executed synchronously in record_loop).
+    webui = None  # set below if webui_port > 0
+
+    def _handle_switch_mode():
+        if state_ref["control_mode"] != ControlMode.MIXED:
+            print(f"[Mode] Fixed to {state_ref['control_mode'].value.upper()}, switching disabled.")
+            return
+        if state_ref["mode"] == ControlMode.POLICY:
+            robot.set_mode("collect")
+            state_ref["mode"] = ControlMode.COLLECT
+            if stream_buffer:
+                stream_buffer.clear()
+            print("[Mode] COLLECT (gravity compensation ON)")
+        else:
+            robot.set_mode("control")
+            state_ref["mode"] = ControlMode.POLICY
+            if stream_buffer:
+                stream_buffer.clear()
+            print("[Mode] POLICY (position control)")
+
+    def _handle_toggle_record():
+        recording_ref["recording"] = not recording_ref["recording"]
+        if recording_ref["recording"]:
+            if stream_buffer:
+                stream_buffer.clear()
+            print(f"[Recording] ON  (episode {recording_ref['episode']})")
+            if webui is not None:
+                webui.on_recording_started()
+        else:
+            print("[Recording] OFF")
+            if webui is not None:
+                webui.on_recording_stopped()
+
+    def _handle_save(label: int = -1):
+        if recording_ref.get("recording", False) and _dataset_buffer_size(dataset) > 0:
+            recording_ref["recording"] = False
+            fc = _dataset_buffer_size(dataset)
+            print(f"[Save] Episode {recording_ref['episode']}: {fc} frames")
+            if webui is not None:
+                webui.on_recording_stopped()
+            if label >= 0:
+                _save_dataset_episode(dataset, label, cfg.task)
+                if webui is not None:
+                    webui.on_episode_saved(recording_ref["episode"], fc, label)
+                recording_ref["episode"] += 1
+                print(f"[Save] Submitted (success={label}). Ready for next episode.")
+            else:
+                print("[Save] Discarded.")
+                _discard_dataset_episode(dataset)
+        else:
+            print("[Save] Nothing to save.")
+
+    def _handle_reset_zero():
+        if recording_ref.get("recording", False):
+            print("[Reset] Cannot reset while recording. Stop recording first.")
+            return
+        print("[Reset] Moving arms to zero position...")
+        if stream_buffer:
+            stream_buffer.clear()
+        reset_to_zero(robot, None, action_features, max_step=cfg.align_max_step)
+
+    # WebUI server — handlers only set pending_ref; main loop executes them.
     if cfg.webui_port > 0:
         def _cmd_switch_mode(_data=None):
-            if state_ref["control_mode"] != ControlMode.MIXED:
-                return {"error": f"Fixed to {state_ref['control_mode'].value.upper()}"}
-            if state_ref["mode"] == ControlMode.POLICY:
-                # Switch to collect mode: enable gravity compensation
-                robot.set_mode("collect")
-                state_ref["mode"] = ControlMode.COLLECT
-                if stream_buffer:
-                    stream_buffer.clear()
-                print("[Mode] COLLECT (gravity compensation ON)")
-            else:
-                # Switch to policy mode: disable gravity compensation
-                robot.set_mode("control")
-                state_ref["mode"] = ControlMode.POLICY
-                if stream_buffer:
-                    stream_buffer.clear()
-                print("[Mode] POLICY (position control)")
+            pending_ref["cmd"] = "switch_mode"
             return None
 
         def _cmd_toggle_record(_data=None):
-            recording_ref["recording"] = not recording_ref["recording"]
-            if recording_ref["recording"]:
-                if stream_buffer:
-                    stream_buffer.clear()
-                print(f"[Recording] ON  (episode {recording_ref['episode']})")
-                if webui is not None:
-                    webui.on_recording_started()
-            else:
-                print("[Recording] OFF")
-                if webui is not None:
-                    webui.on_recording_stopped()
+            pending_ref["cmd"] = "toggle_record"
             return None
 
         def _cmd_save(data):
-            label = data.get("label", -1) if data else -1
-            if recording_ref.get("recording", False) and _dataset_buffer_size(dataset) > 0:
-                recording_ref["recording"] = False
-                fc = _dataset_buffer_size(dataset)
-                print(f"\n[Save] Episode {recording_ref['episode']}: {fc} frames")
-                if webui is not None:
-                    webui.on_recording_stopped()
-                if label >= 0:
-                    _save_dataset_episode(dataset, label, cfg.task)
-                    if webui is not None:
-                        webui.on_episode_saved(recording_ref["episode"], fc, label)
-                    recording_ref["episode"] += 1
-                    print(f"[Save] Submitted (success={label}). Ready for next episode.")
-                else:
-                    print("[Save] Discarded.")
-                    _discard_dataset_episode(dataset)
-            else:
-                print("[Save] Nothing to save.")
+            pending_ref["cmd"] = "save"
+            pending_ref["data"] = data
             return None
 
         def _cmd_reset_zero(_data=None):
-            if recording_ref.get("recording", False):
-                print("[Reset] Cannot reset while recording. Stop recording first.")
-                return {"error": "Cannot reset while recording"}
-            print("[Reset] Moving arms to zero position...")
-            if stream_buffer:
-                stream_buffer.clear()
-            reset_to_zero(robot, None, action_features, max_step=cfg.align_max_step)
+            pending_ref["cmd"] = "reset_zero"
             return None
 
         def _cmd_stop(_data=None):
-            print("\n[Exit]")
+            print("[Exit]")
             stop_ref["stop"] = True
             return None
 
@@ -503,71 +522,54 @@ def run_record(cfg) -> None:
     _old_termios = None
 
     def handle_keypress(k: str):
-        nonlocal state_ref, recording_ref, stop_ref, robot, action_features
         try:
             if k == '\x1b' or k == '\x03':
-                print("\n[Exit]")
+                print("[Exit]")
                 stop_ref["stop"] = True
             elif k == 'p' or k == '\t':
-                if state_ref["control_mode"] != ControlMode.MIXED:
-                    print(f"[Mode] Fixed to {state_ref['control_mode'].value.upper()}, switching disabled.")
-                elif state_ref["mode"] == ControlMode.POLICY:
-                    robot.set_mode("collect")
-                    state_ref["mode"] = ControlMode.COLLECT
-                    if stream_buffer:
-                        stream_buffer.clear()
-                    print(f"[Mode] COLLECT (gravity compensation ON)")
-                else:
-                    robot.set_mode("control")
-                    state_ref["mode"] = ControlMode.POLICY
-                    if stream_buffer:
-                        stream_buffer.clear()
-                    print(f"[Mode] POLICY (position control)")
+                _handle_switch_mode()
             elif k == 'r':
-                recording_ref["recording"] = not recording_ref["recording"]
-                if recording_ref["recording"]:
-                    if stream_buffer:
-                        stream_buffer.clear()
-                    print(f"[Recording] ON  (episode {recording_ref['episode']})")
-                else:
-                    print(f"[Recording] OFF")
+                _handle_toggle_record()
             elif k == 's':
-                if recording_ref.get("recording", False) and _dataset_buffer_size(dataset) > 0:
-                    recording_ref["recording"] = False
-                    fc = _dataset_buffer_size(dataset)
-                    print(f"\n[Save] Episode {recording_ref['episode']}: {fc} frames")
-                    label = prompt_success_failure()
-                    if label >= 0:
-                        _save_dataset_episode(dataset, label, cfg.task)
-                        recording_ref["episode"] += 1
-                        print(f"[Save] Submitted (success={label}). Ready for next episode.")
-                    else:
-                        print("[Save] Discarded.")
-                        _discard_dataset_episode(dataset)
-                else:
-                    print("[Save] Nothing to save.")
+                label = prompt_success_failure()
+                _handle_save(label)
             elif k == 'z':
-                if recording_ref.get("recording", False):
-                    print("[Reset] Cannot reset while recording. Stop recording first.")
-                else:
-                    print("[Reset] Moving arms to zero position...")
-                    if stream_buffer:
-                        stream_buffer.clear()
-                    reset_to_zero(robot, None, action_features, max_step=cfg.align_max_step)
+                _handle_reset_zero()
+            # Clear any pending WebUI command since we just handled one via keyboard
+            pending_ref["cmd"] = None
+            pending_ref["data"] = None
         except Exception as e:
             print(f"Key error: {e}")
 
-    # Main loop
+    # Main loop — process pending WebUI commands synchronously
+    def _process_pending():
+        if pending_ref["cmd"] is None:
+            return
+        cmd = pending_ref["cmd"]
+        data = pending_ref["data"]
+        pending_ref["cmd"] = None
+        pending_ref["data"] = None
+
+        if cmd == "save":
+            label = data.get("label", -1) if data else -1
+            _handle_save(label)
+        elif cmd == "reset_zero":
+            _handle_reset_zero()
+        elif cmd == "switch_mode":
+            _handle_switch_mode()
+        elif cmd == "toggle_record":
+            _handle_toggle_record()
+
     switch_hint = "P=switch  " if state_ref["control_mode"] == ControlMode.MIXED else ""
     mode_label = "collect" if state_ref["mode"] == ControlMode.COLLECT else "policy"
-    print("\n" + "=" * 60)
+    print("=" * 60)
     print(f"  Robot: {robot.name}  |  Mode: {cfg.robot.mode}")
     print(f"  Control: {state_ref['control_mode'].value.upper()}  |  Start: {mode_label.upper()}")
     print(f"  Policy: {'Connected' if (policy and policy.connected) else 'N/A'}  |  Output: {cfg.output_dir}")
     print(f"  Task: {cfg.task}")
     print(f"  Storage: NPY (O(1) RAM)")
     print(f"  Controls: {switch_hint}R=rec  S=save+label  Z=zero-reset  Esc=exit")
-    print("=" * 60 + "\n")
+    print("=" * 60)
     input("Press [Enter] to start...")
 
     _old_termios = _termios.tcgetattr(_stdin_fd)
@@ -591,21 +593,25 @@ def run_record(cfg) -> None:
                 obs_lock=obs_lock,
                 task=cfg.task,
                 on_key=handle_keypress,
+                process_pending=_process_pending,
             )
             if recording_ref.get("recording", False) and _dataset_buffer_size(dataset) > 0:
                 recording_ref["recording"] = False
                 fc = _dataset_buffer_size(dataset)
-                print(f"\n[Auto-save] Episode {recording_ref['episode']}: {fc} frames (time limit)")
+                print(f"[Auto-save] Episode {recording_ref['episode']}: {fc} frames (time limit)")
                 label = prompt_success_failure()
                 if label >= 0:
                     _save_dataset_episode(dataset, label, cfg.task)
                     recording_ref["episode"] += 1
                 else:
                     _discard_dataset_episode(dataset)
+                # Clear any pending WebUI command since we just handled a save
+                pending_ref["cmd"] = None
+                pending_ref["data"] = None
     except KeyboardInterrupt:
-        print("\n[Interrupted]")
+        print("[Interrupted]")
     finally:
-        print("\n" + "=" * 50)
+        print("=" * 50)
         print("  Shutting down...")
         print("=" * 50)
         state_ref["stop"] = True
@@ -618,7 +624,7 @@ def run_record(cfg) -> None:
         robot.disconnect()
         bg_encoder.shutdown()
         print(f"  Output: {dataset_root}")
-        print("  Done.\n")
+        print("  Done.")
 
 
 def main() -> None:
