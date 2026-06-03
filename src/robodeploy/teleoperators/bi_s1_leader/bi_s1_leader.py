@@ -19,8 +19,6 @@ import time
 from functools import cached_property
 from typing import Any
 
-import numpy as np
-
 from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 from ..teleoperator import Teleoperator
@@ -58,13 +56,13 @@ class BiS1Leader(Teleoperator):
         from S1_SDK.S1_arm import S1_arm, control_mode
 
         # Create left arm instance (leader mode - no collision checking needed)
-        self.left_arm = S1_arm(
-            mode=control_mode.only_real,
-            dev=config.left_arm_port,
-            end_effector=config.left_end_effector,
-            check_collision=False,
-            arm_version=config.left_arm_version,
-        )
+        # self.left_arm = S1_arm(
+        #     mode=control_mode.only_real,
+        #     dev=config.left_arm_port,
+        #     end_effector=config.left_end_effector,
+        #     check_collision=False,
+        #     # arm_version=config.left_arm_version,
+        # )
 
         # Create right arm instance
         self.right_arm = S1_arm(
@@ -72,7 +70,7 @@ class BiS1Leader(Teleoperator):
             dev=config.right_arm_port,
             end_effector=config.right_end_effector,
             check_collision=False,
-            arm_version=config.right_arm_version,
+            # arm_version=config.right_arm_version,
         )
 
         self._is_connected = False
@@ -94,7 +92,7 @@ class BiS1Leader(Teleoperator):
 
     @property
     def is_calibrated(self) -> bool:
-        """S1 leader uses zero position setting."""
+        """Check if calibration data exists."""
         return True
 
     def connect(self, calibrate: bool = True) -> None:
@@ -102,17 +100,15 @@ class BiS1Leader(Teleoperator):
             raise DeviceAlreadyConnectedError(f"{self} already connected")
 
         # Enable motors for reading
-        self.left_arm.enable()
         self.right_arm.enable()
 
         self._is_connected = True
         logger.info(f"{self} connected.")
+        # self.calibrate()
 
     def calibrate(self) -> None:
-        """Set current position as zero for both leader arms."""
-        logger.info(f"Setting zero position for {self}")
-        self.left_arm.set_zero_position()
-        self.right_arm.set_zero_position()
+       """Set current positions as zero for both leader arms."""
+       pass
 
     def configure(self) -> None:
         """Configure leader arms. S1 SDK handles this internally."""
@@ -122,20 +118,17 @@ class BiS1Leader(Teleoperator):
         """Set up motor IDs. S1 arms have fixed motor IDs."""
         logger.info("S1 arms have fixed motor IDs, no setup required.")
 
-    def get_action(self) -> tuple[dict[str, float], np.ndarray]:
+    def get_action(self) -> dict[str, float]:
         """Get the current joint positions of both leader arms.
 
         Returns:
-            Tuple of:
-                - Dictionary with keys like 'left_joint1.pos', 'right_gripper.pos', etc. (for dataset)
-                - Numpy array of 14 joint positions [left_7 + right_7] (for action command)
+            Dictionary with keys like 'left_joint1.pos', 'right_gripper.pos', etc.
         """
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        # Enter teach mode with impedance control and enable gravity compensation
-        self.left_arm.control_teach(0.08)
-        self.left_arm.gravity()
+        # self.left_arm.control_teach(0.08)
+        # self.left_arm.gravity()
         self.right_arm.control_teach(0.08)
         self.right_arm.gravity()
 
@@ -143,7 +136,10 @@ class BiS1Leader(Teleoperator):
 
         # Read left arm position
         start = time.perf_counter()
-        left_pos = self.left_arm.get_pos()
+        left_pos = self.right_arm.get_pos()
+        left_pos[0] = -left_pos[0]
+        left_pos[4] = -left_pos[4]
+        left_pos[5] = -left_pos[5]
         for i, motor in enumerate(self.MOTOR_NAMES):
             action_dict[f"left_{motor}.pos"] = left_pos[i]
         dt_ms = (time.perf_counter() - start) * 1e3
@@ -152,15 +148,52 @@ class BiS1Leader(Teleoperator):
         # Read right arm position
         start = time.perf_counter()
         right_pos = self.right_arm.get_pos()
+        
         for i, motor in enumerate(self.MOTOR_NAMES):
             action_dict[f"right_{motor}.pos"] = right_pos[i]
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read right arm action: {dt_ms:.1f}ms")
 
-        # Concatenate for command array: [left_7 + right_7]
-        action_array = np.concatenate([left_pos, right_pos]).astype(np.float32)
+        return action_dict
 
-        return action_dict, action_array
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        """Command both leader arms to move to target joint configurations.
+
+        Used for leader-follower alignment (e.g., after zero-reset).
+        Mirrors BiS1Follower.send_action with the same sign conventions.
+
+        Args:
+            action: Dictionary with keys like 'left_joint1.pos', 'right_gripper.pos', etc.
+
+        Returns:
+            The action actually sent to the motors.
+        """
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"{self} is not connected.")
+
+        
+        right_action = {
+            key.removeprefix("right_"): action[key]
+            for key in action
+            if key.startswith("right_")
+        }
+
+        right_pos = [right_action.get(f"{motor}.pos", 0.0) for motor in self.MOTOR_NAMES]
+
+        left_gripper_pos = left_pos[-1]
+        left_joint_pos = left_pos[:6]
+        right_gripper_pos = right_pos[-1]
+        right_joint_pos = right_pos[:6]
+
+        self.right_arm.joint_control_mit(right_joint_pos)
+        self.right_arm.control_gripper(right_gripper_pos, 0.3)
+
+        sent_action = {}
+        for i, motor in enumerate(self.MOTOR_NAMES):
+            sent_action[f"left_{motor}.pos"] = left_pos[i]
+            sent_action[f"right_{motor}.pos"] = right_pos[i]
+
+        return sent_action
 
     def send_feedback(self, feedback: dict[str, float]) -> None:
         """Send feedback to the leader arms (not supported for S1).
@@ -176,8 +209,8 @@ class BiS1Leader(Teleoperator):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        # Close motors
-        self.left_arm.close()
+        # Disable motors
+    
         self.right_arm.close()
 
         self._is_connected = False

@@ -19,8 +19,6 @@ import time
 from functools import cached_property
 from typing import Any
 
-import numpy as np
-
 from robodeploy.cameras.utils import make_cameras_from_configs
 from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
@@ -63,7 +61,7 @@ class BiS1Follower(Robot):
             dev=config.left_arm_port,
             end_effector=config.left_end_effector,
             check_collision=config.check_collision,
-            arm_version=config.left_arm_version,
+            # arm_version=config.left_arm_version,
         )
 
         # Create right arm instance
@@ -72,7 +70,7 @@ class BiS1Follower(Robot):
             dev=config.right_arm_port,
             end_effector=config.right_end_effector,
             check_collision=config.check_collision,
-            arm_version=config.right_arm_version,
+            # arm_version=config.right_arm_version,
         )
 
         self.cameras = make_cameras_from_configs(config.cameras)
@@ -103,7 +101,7 @@ class BiS1Follower(Robot):
     @property
     def is_connected(self) -> bool:
         return self._is_connected and all(cam.is_connected for cam in self.cameras.values())
-
+    
     def connect(self, calibrate: bool = True) -> None:
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
@@ -111,6 +109,7 @@ class BiS1Follower(Robot):
         # Enable motors
         self.left_arm.enable()
         self.right_arm.enable()
+
 
         # Connect cameras
         for cam in self.cameras.values():
@@ -121,11 +120,11 @@ class BiS1Follower(Robot):
 
     @property
     def is_calibrated(self) -> bool:
-        """S1 follower uses zero position setting."""
+        """Check if calibration data exists."""
         return True
 
     def calibrate(self) -> None:
-        """Set current position as zero for both arms."""
+        """Set current positions as zero for both arms"""
         logger.info(f"Setting zero position for {self}")
         self.left_arm.set_zero_position()
         self.right_arm.set_zero_position()
@@ -169,11 +168,11 @@ class BiS1Follower(Robot):
 
         return obs_dict
 
-    def send_action(self, action: np.ndarray) -> np.ndarray:
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Command both arms to move to target joint configurations.
 
         Args:
-            action: Numpy array of 14 joint positions [left_7 + right_7]
+            action: Dictionary with keys like 'left_joint1.pos', 'right_gripper.pos', etc.
 
         Returns:
             The action actually sent to the motors.
@@ -181,18 +180,28 @@ class BiS1Follower(Robot):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        # Ensure action is numpy array
-        action = np.asarray(action, dtype=np.float32)
+        # Extract left arm action
+        left_action = {
+            key.removeprefix("left_"): action[key]
+            for key in action
+            if key.startswith("left_")
+        }
 
-        # Split into left and right arms (each 7 values)
-        left_action = action[:7]
-        right_action = action[7:]
+        # Extract right arm action
+        right_action = {
+            key.removeprefix("right_"): action[key]
+            for key in action
+            if key.startswith("right_")
+        }
 
-        # Separate gripper control (last element)
-        left_joint_pos = left_action[:6].tolist()
-        left_gripper_pos = float(left_action[6])
-        right_joint_pos = right_action[:6].tolist()
-        right_gripper_pos = float(right_action[6])
+        # Prepare positions for S1 SDK (expects list of 7 values: 6 joints + gripper)
+        left_pos = [left_action.get(f"{motor}.pos", 0.0) for motor in self.MOTOR_NAMES]
+        right_pos = [right_action.get(f"{motor}.pos", 0.0) for motor in self.MOTOR_NAMES]
+
+        left_gripper_pos = left_pos[-1]
+        left_joint_pos = left_pos[:6]
+        right_gripper_pos = right_pos[-1]
+        right_joint_pos = right_pos[:6]
 
         # Send commands to each arm
         self.left_arm.joint_control_mit(left_joint_pos)
@@ -200,13 +209,19 @@ class BiS1Follower(Robot):
         self.right_arm.joint_control_mit(right_joint_pos)
         self.right_arm.control_gripper(right_gripper_pos, 0.3)
 
-        return action
+        # Return the actual sent action with prefixes
+        sent_action = {}
+        for i, motor in enumerate(self.MOTOR_NAMES):
+            sent_action[f"left_{motor}.pos"] = left_pos[i]
+            sent_action[f"right_{motor}.pos"] = right_pos[i]
+
+        return sent_action
 
     def disconnect(self):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        # Close motors
+        # Disable motors
         self.left_arm.close()
         self.right_arm.close()
 

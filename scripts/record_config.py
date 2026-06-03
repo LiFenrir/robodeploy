@@ -82,8 +82,8 @@ class RecordConfig:
     align_max_step: float = 0.02
 
     # Control mode
-    control_mode: Literal["teleop", "policy", "mixed"] = "mixed"
-    control_mode_initial: Literal["teleop", "policy"] = "teleop"
+    control_mode: str = "mixed"
+    control_mode_initial: str = "teleop"
 
     # WebUI
     webui_port: int = 8080

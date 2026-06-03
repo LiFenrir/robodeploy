@@ -19,8 +19,6 @@ import time
 from functools import cached_property
 from typing import Any
 
-import numpy as np
-
 from robodeploy.cameras.utils import make_cameras_from_configs
 from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
@@ -149,11 +147,11 @@ class S1Follower(Robot):
 
         return obs_dict
 
-    def send_action(self, action: np.ndarray) -> np.ndarray:
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Command the arm to move to a target joint configuration.
 
         Args:
-            action: Numpy array of 7 joint positions (6 joints + gripper)
+            action: Dictionary with keys like 'joint1.pos', 'gripper.pos', etc.
 
         Returns:
             The action actually sent to the motors.
@@ -161,25 +159,28 @@ class S1Follower(Robot):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        # Ensure action is numpy array
-        action = np.asarray(action, dtype=np.float32)
-
-        # Separate gripper control (last element)
-        joint_pos = action[:6].tolist()
-        gripper_pos = float(action[6])
+        # Prepare positions for S1 SDK (expects list of 7 values: 6 joints + gripper)
+        pos = [action.get(f"{motor}.pos", 0.0) for motor in self.MOTOR_NAMES]
+        gripper_pos = pos[-1]
+        joint_pos = pos[0:6]
 
         # Send commands to the arm
         self.arm.joint_control_mit(joint_pos)
         self.arm.control_gripper(gripper_pos, 0.3)
 
-        return action
+        # Return the actual sent action
+        sent_action = {}
+        for i, motor in enumerate(self.MOTOR_NAMES):
+            sent_action[f"{motor}.pos"] = pos[i]
+
+        return sent_action
 
     def disconnect(self):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
         # Disable motors
-        self.arm.disable()
+        self.arm.close()
 
         # Disconnect cameras
         for cam in self.cameras.values():

@@ -30,8 +30,8 @@ class BiS1LeaderConfig(TeleoperatorConfig):
 
     # Left arm configuration
     left_arm_version: str = "V2"
-    left_end_effector: str = "None"
+    left_end_effector: str = "teach"
 
     # Right arm configuration
     right_arm_version: str = "V2"
-    right_end_effector: str = "None"
+    right_end_effector: str = "teach"

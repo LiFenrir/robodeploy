@@ -147,6 +147,24 @@ def reset_to_zero(
     start_pos = np.array([obs.get(k, 0.0) for k in keys], dtype=np.float64)
     zero_pos = np.zeros(len(keys), dtype=np.float64)
 
+    zero_pos= np.array([-0.6738767,
+                        1.7011895,
+                        0.984779,
+                        0.771153,
+                        0.04902035,
+                        -0.52204955,
+                        1.3284885,
+                        0.67349523,
+                        1.7011895,
+                        0.9939343,
+                        0.77039003,
+                        -0.052452832,
+                        0.5292967,
+                        1.3761729], dtype=np.float64)
+    
+    zero_pos[6] = 1.0   # gripper open
+    zero_pos[13] = 1.0
+
     max_disp = abs(start_pos).max()
     steps = max(1, int(np.ceil(max_disp / max_step)))
 

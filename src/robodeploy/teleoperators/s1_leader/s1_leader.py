@@ -19,8 +19,6 @@ import time
 from functools import cached_property
 from typing import Any
 
-import numpy as np
-
 from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 from ..teleoperator import Teleoperator
@@ -109,21 +107,18 @@ class S1Leader(Teleoperator):
         """Set up motor IDs. S1 arms have fixed motor IDs."""
         logger.info("S1 arms have fixed motor IDs, no setup required.")
 
-    def get_action(self) -> tuple[dict[str, float], np.ndarray]:
+    def get_action(self) -> dict[str, float]:
         """Get the current joint positions of the leader arm.
 
         Returns:
-            Tuple of:
-                - Dictionary with keys like 'joint1.pos', 'gripper.pos', etc. (for dataset)
-                - Numpy array of 7 joint positions (for action command)
+            Dictionary with keys like 'joint1.pos', 'gripper.pos', etc.
         """
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
-
-        # Enter teach mode with impedance control and enable gravity compensation
+            
+         
         self.arm.control_teach(0.08)
         self.arm.gravity()
-
         action_dict = {}
 
         # Read arm position
@@ -134,7 +129,7 @@ class S1Leader(Teleoperator):
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read arm action: {dt_ms:.1f}ms")
 
-        return action_dict, np.array(pos, dtype=np.float32)
+        return action_dict
 
     def send_feedback(self, feedback: dict[str, float]) -> None:
         """Send feedback to the leader arm (not supported for S1).
@@ -151,7 +146,7 @@ class S1Leader(Teleoperator):
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
         # Disable motors
-        self.arm.disable()
+        self.arm.close()
 
         self._is_connected = False
         logger.info(f"{self} disconnected.")

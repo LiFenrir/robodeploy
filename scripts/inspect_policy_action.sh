@@ -27,7 +27,7 @@ RIGHT_FOLLOWER_PORT="/dev/right_follower"
 # Policy（策略客户端）
 #------------------------------------------------------------------------------
 POLICY_TYPE="openpi"
-OPENPI_HOST="localhost"
+OPENPI_HOST="192.168.1.17"
 OPENPI_PORT=8000
 
 # Cameras（摄像头 — 严格 JSON 格式）
@@ -38,7 +38,7 @@ CAMERA_CONFIG='{"front":{"type":"intelrealsense","serial_number_or_name":"135122
 #------------------------------------------------------------------------------
 TASK="hang cloths"
 FPS=30
-MAX_STEPS=300
+MAX_STEPS=2000
 LOG_FILE="policy_actions.jsonl"
 
 # ==============================================================================

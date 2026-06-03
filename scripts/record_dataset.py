@@ -111,6 +111,15 @@ def numpy_to_action_dict(action_np: np.ndarray, action_features: dict[str, type]
 # Inference thread
 # ==============================================================================
 
+def _stack_front_cameras(images: dict) -> dict:
+    """Vertically stack front + front_1 (front_1 rotated 180° first), in-place."""
+    if "front" in images and "front_1" in images:
+        front = np.asarray(images["front"])
+        front_1 = np.asarray(images["front_1"])
+        images["front"] = np.concatenate([front, np.rot90(front_1, 2)], axis=0)
+        del images["front_1"]
+    return images
+
 def _start_inference_thread(
     policy,
     buffer: StreamActionBuffer,
@@ -150,6 +159,7 @@ def _start_inference_thread(
             try:
                 state = np.array([obs.get(k, 0.0) for k in action_features], dtype=np.float64)
                 images = {cam: np.asarray(obs[cam]) for cam in camera_names if cam in obs}
+                _stack_front_cameras(images)
 
                 result = policy.infer(images, state, task)
                 actions = result.get("actions", None)
@@ -241,8 +251,8 @@ def record_loop(
                 obs_frame = build_dataset_frame(dataset.features, observation, "observation")
                 action_frame = build_dataset_frame(dataset.features, sent_action, "action")
                 frame = {**obs_frame, **action_frame}
-                frame["is_infer_data"] = np.int64(is_inference)
-                frame["is_failure_data"] = np.int64(0)
+                frame["is_infer_data"] = np.array([is_inference], dtype=np.int64)
+                frame["is_failure_data"] = np.array([0], dtype=np.int64)
                 dataset.add_frame(frame, task=task)
 
         dt_s = time.perf_counter() - start_loop_t
