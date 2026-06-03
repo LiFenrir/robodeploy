@@ -18,11 +18,25 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
-import cv2
-import numpy as np
 from tqdm import tqdm
+
+
+def _probe_resolution(video_path: str) -> tuple[int, int, float]:
+    """Get (width, height, fps) from a video via ffprobe."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate",
+        "-of", "csv=p=0",
+        video_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    w, h, fps_str = result.stdout.strip().split(",")
+    num, den = fps_str.split("/")
+    return int(w), int(h), float(num) / float(den)
 
 
 def stack_front_videos(
@@ -30,43 +44,31 @@ def stack_front_videos(
     front1_path: str,
     output_path: str,
 ) -> tuple[int, int]:
-    """Stack front (top) + front_1 rotated 180deg (bottom). Returns (new_h, new_w)."""
-    cap_top = cv2.VideoCapture(front_path)
-    cap_bottom = cv2.VideoCapture(front1_path)
-    if not cap_top.isOpened():
-        raise RuntimeError(f"Cannot open: {front_path}")
-    if not cap_bottom.isOpened():
-        raise RuntimeError(f"Cannot open: {front1_path}")
+    """Stack front (top) + front_1 rotated 180deg (bottom) via ffmpeg. Returns (new_h, new_w)."""
+    w1, h1, fps = _probe_resolution(front_path)
+    w2, h2, _ = _probe_resolution(front1_path)
+    if w1 != w2:
+        raise RuntimeError(f"front ({w1}x{h1}) and front_1 ({w2}x{h2}) width mismatch")
 
-    fps = int(cap_top.get(cv2.CAP_PROP_FPS))
-    w = int(cap_top.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h_top = int(cap_top.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    h_bottom = int(cap_bottom.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-    if w != int(cap_bottom.get(cv2.CAP_PROP_FRAME_WIDTH)):
-        cap_top.release()
-        cap_bottom.release()
-        raise RuntimeError("front and front_1 width mismatch")
-
-    new_h = h_top + h_bottom
-
+    new_h = h1 + h2
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, fps, (w, new_h))
 
-    while True:
-        ret_top, frame_top = cap_top.read()
-        ret_bottom, frame_bottom = cap_bottom.read()
-        if not ret_top or not ret_bottom:
-            break
-        frame_bottom = cv2.rotate(frame_bottom, cv2.ROTATE_180)
-        out.write(np.vstack([frame_top, frame_bottom]))
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", front_path,
+        "-i", front1_path,
+        "-filter_complex",
+        f"[1:v]rotate=PI:ow=iw:oh=ih[v1]; [0:v][v1]vstack=inputs=2",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-r", str(fps),
+        output_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {result.stderr[-500:]}")
 
-    cap_top.release()
-    cap_bottom.release()
-    out.release()
-
-    return new_h, w
+    return new_h, w1
 
 
 def _get_episodes(chunk_dir: Path) -> list[Path]:

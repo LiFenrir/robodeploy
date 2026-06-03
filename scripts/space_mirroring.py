@@ -12,26 +12,18 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import pandas as pd
 import numpy as np
-import cv2
 from tqdm import tqdm
 
-# Import merge function from merge_lerobot
-# Add current directory to path to import merge_lerobot from same directory
 _utils_dir = Path(__file__).parent
-if str(_utils_dir) not in sys.path:
-    sys.path.insert(0, str(_utils_dir))
-try:
-    from merge_lerobot import merge_repos
-    MERGE_AVAILABLE = True
-except ImportError:
-    MERGE_AVAILABLE = False
-    print("Warning: merge_lerobot module not available. Merge functionality will be disabled.")
+_MERGE_SCRIPT = _utils_dir / "merge_lerobot_datasets.py"
+MERGE_AVAILABLE = _MERGE_SCRIPT.exists()
 
 
 # ==================== Core Utility Functions ====================
@@ -56,10 +48,14 @@ def swap_arms_in_array(arr: np.ndarray, left_dim: int = 7, right_dim: int = 7) -
     left_arm = arr_flat[:left_dim].copy()
     right_arm = arr_flat[left_dim:left_dim + right_dim].copy()
     swapped = np.concatenate([right_arm, left_arm])
-    
+
+    # Negate j1(0), j5(4), j6(5) in both halves after swap
+    negate_indices = [0, 4, 5, left_dim, left_dim + 4, left_dim + 5]
+    swapped[negate_indices] *= -1
+
     if arr.ndim > 1:
         swapped = swapped.reshape(arr.shape)
-    
+
     return swapped
 
 
@@ -79,7 +75,13 @@ def swap_array_dims_list(arr: List[float], left_dim: int = 7, right_dim: int = 7
     left_arm = arr[:left_dim].copy()
     right_arm = arr[left_dim:left_dim + right_dim].copy()
     swapped = right_arm + left_arm
-    
+
+    # Negate j1(0), j5(4), j6(5) in both halves after swap
+    negate_indices = [0, 4, 5, left_dim, left_dim + 4, left_dim + 5]
+    for i in negate_indices:
+        if i < len(swapped):
+            swapped[i] = -swapped[i]
+
     if keep_padding and len(arr) > total_dim:
         padding = arr[total_dim:]
         swapped = swapped + padding
@@ -348,42 +350,32 @@ def process_episodes_stats_jsonl(
 
 # ==================== Video Processing ====================
 
-def flip_video(input_path: str, output_path: str) -> Tuple[str, bool, str]:
-    """Flip a single video file (horizontal mirroring)"""
+def flip_video(input_path: str, output_path: str, transform: str = "hflip") -> Tuple[str, bool, str]:
+    """Process a single video file via ffmpeg, output H.264.
+
+    transform: "copy" = no filter, "hflip" = horizontal mirror,
+               "hflip+rotate180" = hflip then 180-degree rotation.
+    """
+    vf_map = {
+        "copy": "null",
+        "hflip": "hflip",
+        "hflip+rotate180": "hflip,transpose=2,transpose=2",
+    }
+    vf = vf_map.get(transform, "hflip")
     try:
-        cap = cv2.VideoCapture(input_path)
-        if not cap.isOpened():
-            return (input_path, False, f"Unable to open video file: {input_path}")
-        
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
         os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
-        
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-        
-        if not out.isOpened():
-            cap.release()
-            return (input_path, False, f"Unable to create output video file: {output_path}")
-        
-        frame_count = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            flipped_frame = cv2.flip(frame, 1)
-            out.write(flipped_frame)
-            frame_count += 1
-        
-        cap.release()
-        out.release()
-        
-        return (input_path, True, f"Successfully processed {frame_count} frames")
-    
+        cmd = [
+            "ffmpeg", "-y", "-v", "error",
+            "-i", input_path,
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return (input_path, False, f"ffmpeg failed: {result.stderr[-200:]}")
+        return (input_path, True, "ok")
     except Exception as e:
         return (input_path, False, f"Error: {str(e)}")
 
@@ -392,29 +384,30 @@ def process_videos(
     input_dir: Path,
     output_dir: Path,
     num_workers: int = 4,
+    transform: str = "hflip",
 ) -> None:
     """Batch process video files"""
     video_files = list(input_dir.rglob('*.mp4'))
-    
+
     if not video_files:
         print(f"Warning: No video files found in {input_dir}")
         return
-    
+
     print(f"Found {len(video_files)} video files")
-    
+
     def get_output_path(input_file: Path) -> Path:
         relative = input_file.relative_to(input_dir)
         return output_dir / relative
-    
-    tasks = [(str(f), str(get_output_path(f))) for f in video_files]
-    
+
+    tasks = [(str(f), str(get_output_path(f)), transform) for f in video_files]
+
     success_count = 0
     fail_count = 0
-    
+
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         future_to_video = {
-            executor.submit(flip_video, inp, out): inp
-            for inp, out in tasks
+            executor.submit(flip_video, inp, out, tr): inp
+            for inp, out, tr in tasks
         }
         
         for future in tqdm(as_completed(future_to_video), total=len(tasks), desc="Processing videos"):
@@ -444,19 +437,22 @@ def merge_lerobot_datasets(
     features: Optional[Dict[str, Any]] = None,
     force: bool = False,
 ) -> None:
-    """Merge multiple LeRobot datasets by calling merge_lerobot.merge_repos"""
+    """Merge multiple LeRobot datasets by calling merge_lerobot_datasets.py."""
     if not MERGE_AVAILABLE:
-        raise RuntimeError("merge_lerobot module not available. Cannot perform merge operation.")
-    
-    merge_repos(
-        src_paths=src_paths,
-        tgt_path=tgt_path,
-        repo_id=repo_id,
-        fps=fps,
-        robot_type=robot_type,
-        features=features,
-        force=force
-    )
+        raise RuntimeError(f"Merge script not found: {_MERGE_SCRIPT}")
+    cmd = [
+        sys.executable, str(_MERGE_SCRIPT),
+        "--datasets", *src_paths,
+        "--output_dir", tgt_path,
+        "--repo_id", repo_id,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    if result.returncode != 0:
+        raise RuntimeError(f"Merge failed with exit code {result.returncode}")
 
 
 # ==================== Main Functions ====================
@@ -467,8 +463,13 @@ def create_mirror_dataset(
     left_dim: int = 7,
     right_dim: int = 7,
     num_workers: int = 4,
+    flip_views: list[str] | None = None,
+    swap_left_view: str = "observation.images.hand_left",
+    swap_right_view: str = "observation.images.hand_right",
 ) -> None:
     """Create mirrored dataset"""
+    if flip_views is None:
+        flip_views = ["observation.images.top_head"]
     src_root = Path(src_path).expanduser().resolve()
     tgt_root = Path(tgt_path).expanduser().resolve()
     
@@ -537,27 +538,26 @@ def create_mirror_dataset(
                 chunk_name = chunk_dir.name
                 tgt_chunk_dir = tgt_root / "videos" / chunk_name
                 
-                # Process top_head (direct flip)
-                top_head_src = chunk_dir / "observation.images.top_head"
-                if top_head_src.exists() and top_head_src.is_dir():
-                    top_head_tgt = tgt_chunk_dir / "observation.images.top_head"
-                    print(f"    Processing {chunk_name}/top_head...")
-                    process_videos(top_head_src, top_head_tgt, num_workers)
-                
-                # Swap hand_left and hand_right
-                # hand_right -> hand_left (flip and place in hand_left position)
-                hand_right_src = chunk_dir / "observation.images.hand_right"
-                if hand_right_src.exists() and hand_right_src.is_dir():
-                    hand_left_tgt = tgt_chunk_dir / "observation.images.hand_left"
-                    print(f"    Processing {chunk_name}/hand_right -> hand_left...")
-                    process_videos(hand_right_src, hand_left_tgt, num_workers)
-                
-                # hand_left -> hand_right (flip and place in hand_right position)
-                hand_left_src = chunk_dir / "observation.images.hand_left"
-                if hand_left_src.exists() and hand_left_src.is_dir():
-                    hand_right_tgt = tgt_chunk_dir / "observation.images.hand_right"
-                    print(f"    Processing {chunk_name}/hand_left -> hand_right...")
-                    process_videos(hand_left_src, hand_right_tgt, num_workers)
+                # Direct views (front etc.) — horizontal flip
+                for view in flip_views:
+                    src_view_dir = chunk_dir / view
+                    if src_view_dir.exists() and src_view_dir.is_dir():
+                        tgt_view_dir = tgt_chunk_dir / view
+                        print(f"    Processing {chunk_name}/{view} (hflip)...")
+                        process_videos(src_view_dir, tgt_view_dir, num_workers, transform="hflip")
+
+                # Swap left/right views: hflip + rotate180
+                right_src = chunk_dir / swap_right_view
+                if right_src.exists() and right_src.is_dir():
+                    left_tgt = tgt_chunk_dir / swap_left_view
+                    print(f"    Processing {chunk_name}/{swap_right_view} -> {swap_left_view} (hflip+rotate180)...")
+                    process_videos(right_src, left_tgt, num_workers, transform="hflip+rotate180")
+
+                left_src = chunk_dir / swap_left_view
+                if left_src.exists() and left_src.is_dir():
+                    right_tgt = tgt_chunk_dir / swap_right_view
+                    print(f"    Processing {chunk_name}/{swap_left_view} -> {swap_right_view} (hflip+rotate180)...")
+                    process_videos(left_src, right_tgt, num_workers, transform="hflip+rotate180")
         
         print("✓ All video files processing complete")
     else:
@@ -607,6 +607,12 @@ Examples:
     parser_create.add_argument('--left-dim', type=int, default=7, help='Left arm dimension (default: 7)')
     parser_create.add_argument('--right-dim', type=int, default=7, help='Right arm dimension (default: 7)')
     parser_create.add_argument('--num-workers', type=int, default=4, help='Number of parallel worker processes (default: 4)')
+    parser_create.add_argument('--flip-views', nargs='+', default=None,
+                               help='View names to flip directly (default: observation.images.top_head)')
+    parser_create.add_argument('--swap-left-view', type=str, default='observation.images.hand_left',
+                               help='Left view to swap with right (default: observation.images.hand_left)')
+    parser_create.add_argument('--swap-right-view', type=str, default='observation.images.hand_right',
+                               help='Right view to swap with left (default: observation.images.hand_right)')
     
     # merge command
     parser_merge = subparsers.add_parser('merge', help='Merge datasets')
@@ -627,6 +633,12 @@ Examples:
     parser_full.add_argument('--left-dim', type=int, default=7, help='Left arm dimension (default: 7)')
     parser_full.add_argument('--right-dim', type=int, default=7, help='Right arm dimension (default: 7)')
     parser_full.add_argument('--num-workers', type=int, default=4, help='Number of parallel worker processes (default: 4)')
+    parser_full.add_argument('--flip-views', nargs='+', default=None,
+                             help='View names to flip directly')
+    parser_full.add_argument('--swap-left-view', type=str, default='observation.images.hand_left',
+                             help='Left view to swap with right')
+    parser_full.add_argument('--swap-right-view', type=str, default='observation.images.hand_right',
+                             help='Right view to swap with left')
     parser_full.add_argument('--fps', type=int, default=30, help='FPS (default: 30)')
     parser_full.add_argument('--robot-type', type=str, default='agilex', help='Robot type (default: agilex)')
     parser_full.add_argument('--features-json', type=str, default=None, help='Path to features.json file')
@@ -640,12 +652,15 @@ Examples:
             args.tgt_path,
             args.left_dim,
             args.right_dim,
-            args.num_workers
+            args.num_workers,
+            flip_views=args.flip_views,
+            swap_left_view=args.swap_left_view,
+            swap_right_view=args.swap_right_view,
         )
     
     elif args.command == 'merge':
         if not MERGE_AVAILABLE:
-            print("Error: merge_lerobot module not available. Please ensure merge_lerobot.py is accessible.")
+            print(f"Error: Merge script not found: {_MERGE_SCRIPT}")
             sys.exit(1)
         
         features = None
@@ -676,14 +691,17 @@ Examples:
             args.mirror_path,
             args.left_dim,
             args.right_dim,
-            args.num_workers
+            args.num_workers,
+            flip_views=args.flip_views,
+            swap_left_view=args.swap_left_view,
+            swap_right_view=args.swap_right_view,
         )
         print()
         
         # Step 2: Merge datasets
         print("Step 2/2: Merging datasets")
         if not MERGE_AVAILABLE:
-            print("Error: merge_lerobot module not available. Please ensure merge_lerobot.py is accessible.")
+            print(f"Error: Merge script not found: {_MERGE_SCRIPT}")
             sys.exit(1)
         
         features = None
@@ -712,4 +730,3 @@ Examples:
 
 if __name__ == '__main__':
     main()
-
