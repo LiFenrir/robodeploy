@@ -32,3 +32,6 @@ Thumbs.db
 
 #data
 outputs/
+
+#codegraph
+.codegraph
