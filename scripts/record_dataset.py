@@ -158,6 +158,10 @@ def _start_inference_thread(
 
             try:
                 state = np.array([obs.get(k, 0.0) for k in action_features], dtype=np.float64)
+                # Binarize gripper state at joint indices 6 and 13: < 0.2 -> 0, >= 0.2 -> 1
+                for gi in (6, 13):
+                    if gi < len(state):
+                        state[gi] = 0.0 if state[gi] < 0.2 else 1.0
                 images = {cam: np.asarray(obs[cam]) for cam in camera_names if cam in obs}
                 _stack_front_cameras(images)
 
