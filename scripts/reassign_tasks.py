@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+Reassign task_index based on first frame Joint1 position.
+LOW  (< 0.85) → task0: "First bring the gripper close to the cloth, then grasp ..."
+HIGH (>= 0.85) → task1: "Grasp a single layer of the cloth with the gripper, then ..."
+
+Reads a LeRobot v2.1 dataset, rewrites task_index in each parquet,
+regenerates tasks.jsonl + episodes.jsonl + info.json.
+"""
+
+import argparse
+import json
+import logging
+import shutil
+import sys
+from pathlib import Path
+
+import jsonlines
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+
+THRESHOLD = 0.85
+TASK_DESCRIPTIONS = {
+    0: "First bring the gripper close to the cloth, then grasp a single layer of the cloth, and finally place the cloth onto the board",
+    1: "Grasp a single layer of the cloth with the gripper, then place the cloth onto the board",
+}
+
+
+def classify_task(parquet_path: Path) -> int:
+    """Return task_index based on first frame Joint1."""
+    df = pd.read_parquet(parquet_path)
+    first = df[df["frame_index"] == 0]
+    if len(first) == 0:
+        logger.warning(f"No frame_index==0 in {parquet_path}, defaulting to task0")
+        return 0
+    joint1 = float(first["observation.state"].iloc[0][1])
+    return 1 if joint1 >= THRESHOLD else 0
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--src", required=True, help="Source dataset")
+    parser.add_argument("--tgt", required=True, help="Output directory")
+    parser.add_argument("--repo-id", default="s1_data_clean")
+    args = parser.parse_args()
+
+    src = Path(args.src).resolve()
+    if not (src / "meta" / "info.json").exists():
+        logger.error(f"Not a LeRobot dataset: {src}")
+        sys.exit(1)
+
+    # Load metadata
+    with open(src / "meta" / "info.json") as f:
+        info = json.load(f)
+
+    with jsonlines.open(src / "meta" / "episodes.jsonl") as reader:
+        episodes = list(reader)
+
+    features = info.get("features", {})
+    video_keys = [k for k, v in features.items() if v.get("dtype") == "video"]
+    total_episodes = len(episodes)
+
+    # Classify each episode
+    task_assignments = {}
+    task_counts = {0: 0, 1: 0}
+    for ep in episodes:
+        ep_idx = ep["episode_index"]
+        chunk = ep_idx // 1000
+        pq_path = src / f"data/chunk-{chunk:03d}/episode_{ep_idx:06d}.parquet"
+        t = classify_task(pq_path)
+        task_assignments[ep_idx] = t
+        task_counts[t] += 1
+        logger.info(f"  episode_{ep_idx:06d}: Joint1 → task{t}")
+
+    logger.info(f"Task distribution: task0={task_counts[0]}, task1={task_counts[1]}")
+
+    # Setup output
+    tgt = Path(args.tgt).resolve() / args.repo_id
+    if tgt.exists():
+        shutil.rmtree(tgt)
+
+    # Copy & rewrite parquets with new task_index
+    new_episodes = []
+    global_frame = 0
+
+    for ep in episodes:
+        old_idx = ep["episode_index"]
+        new_idx = old_idx  # keep same ordering
+        new_chunk = new_idx // 1000
+        new_task = task_assignments[old_idx]
+
+        src_pq = src / f"data/chunk-{old_idx // 1000:03d}/episode_{old_idx:06d}.parquet"
+        dst_pq = tgt / f"data/chunk-{new_chunk:03d}/episode_{new_idx:06d}.parquet"
+        dst_pq.parent.mkdir(parents=True, exist_ok=True)
+
+        table = pq.read_table(str(src_pq))
+        n_frames = table.num_rows
+        col_dict = {c: table.column(c) for c in table.column_names}
+        col_dict["task_index"] = np.full(n_frames, new_task, dtype=np.int64)
+        pq.write_table(pa.table(col_dict), str(dst_pq))
+
+        # Copy videos
+        video_template = info.get("video_path",
+            "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4")
+        for vk in video_keys:
+            src_vid = src / video_template.format(
+                episode_chunk=old_idx // 1000, video_key=vk, episode_index=old_idx)
+            if src_vid.exists():
+                dst_vid = tgt / video_template.format(
+                    episode_chunk=new_chunk, video_key=vk, episode_index=new_idx)
+                dst_vid.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(src_vid), str(dst_vid))
+
+        new_episodes.append({
+            "episode_index": new_idx,
+            "tasks": [TASK_DESCRIPTIONS[new_task]],
+            "length": ep["length"],
+        })
+        global_frame += n_frames
+
+    # Write tasks.jsonl
+    meta_dir = tgt / "meta"
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    with jsonlines.open(meta_dir / "tasks.jsonl", "w") as tw:
+        for tidx in sorted(TASK_DESCRIPTIONS):
+            tw.write({"task_index": tidx, "task": TASK_DESCRIPTIONS[tidx]})
+
+    # Write episodes.jsonl
+    with jsonlines.open(meta_dir / "episodes.jsonl", "w") as ew:
+        for ep in new_episodes:
+            ew.write(ep)
+
+    # Copy episodes_stats.jsonl (will be regenerated by compute_stats)
+    src_stats = src / "meta" / "episodes_stats.jsonl"
+    if src_stats.exists():
+        shutil.copy2(str(src_stats), str(meta_dir / "episodes_stats.jsonl"))
+
+    # Write info.json
+    total_chunks = (total_episodes - 1) // 1000 + 1 if total_episodes > 0 else 0
+    new_info = {
+        **info,
+        "total_episodes": total_episodes,
+        "total_frames": global_frame,
+        "total_tasks": len(TASK_DESCRIPTIONS),
+        "total_videos": total_episodes * len(video_keys),
+        "total_chunks": total_chunks,
+        "splits": {"train": f"0:{total_episodes}"},
+    }
+    with open(meta_dir / "info.json", "w") as f:
+        json.dump(new_info, f, indent=2)
+
+    logger.info(f"Output: {tgt}")
+    logger.info(f"Done. {total_episodes} episodes, {global_frame} frames, "
+                f"2 tasks (task0={task_counts[0]}, task1={task_counts[1]})")
+
+
+if __name__ == "__main__":
+    main()
