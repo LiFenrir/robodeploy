@@ -73,6 +73,14 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         from .arx_x5.bi_arx_x5 import BiARXX5Robot
 
         return BiARXX5Robot(config)
+    elif config.type == "innov_arm_v1":
+        from .lerobot_robot_my_arm.innov_arm_v1 import InnovArmV1Robot
+
+        return InnovArmV1Robot(config)
+    elif config.type == "bi_innov_arm_v1":
+        from .lerobot_robot_my_arm.bi_innov_arm_v1 import BiInnovArmV1Robot
+
+        return BiInnovArmV1Robot(config)
     elif config.type == "s1_follower":
         from .s1_follower import S1Follower
 
