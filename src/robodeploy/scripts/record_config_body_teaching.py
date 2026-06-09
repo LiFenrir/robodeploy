@@ -16,6 +16,7 @@ Example:
 from dataclasses import dataclass, field
 
 from robodeploy.robots.arx_x5 import arx_x5, bi_arx_x5  # noqa: F401
+from robodeploy.robots.lerobot_robot_my_arm import innov_arm_v1, bi_innov_arm_v1  # noqa: F401
 from robodeploy.policy_clients import (  # noqa: F401
     lingbot,
     openpi,
@@ -28,7 +29,7 @@ from robodeploy.robots import RobotConfig
 class RecordBodyTeachingConfig:
     """Configuration for body-teaching data collection + inference script."""
 
-    # Robot (draccus ChoiceRegistry, use --robot.type=arx_x5 or bi_arx_x5)
+    # Robot (draccus ChoiceRegistry: arx_x5, bi_arx_x5, innov_arm_v1, bi_innov_arm_v1)
     robot: RobotConfig | None = None
 
     # Policy client (draccus ChoiceRegistry, use --policy.type=...)

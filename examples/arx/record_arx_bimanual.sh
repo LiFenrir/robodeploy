@@ -12,14 +12,14 @@
 #   352  -> right_hand
 #
 # Usage:
-#   ./scripts/record_arx_bimanual.sh
+#   bash examples/arx/record_arx_bimanual.sh
 #
 # Adjust CAN ports below to match your hardware.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # ---------- hardware config (edit as needed) ----------
 LEFT_CAN="can1"
@@ -39,8 +39,8 @@ CAMERAS_JSON='{
 }'
 
 # ---------- output ----------
-OUTPUT_DIR="${PROJECT_ROOT}/outputs/arx5"
-REPO_ID="arx_bimanual_$(date +%m%d_%H%M)"
+OUTPUT_DIR="${PROJECT_ROOT}/output"
+REPO_ID="arx/arx_$(date +%m%d_%H%M)"
 TASK="${TASK:-pick and place}"
 
 # ---------- control ----------
@@ -66,7 +66,7 @@ echo ""
 
 cd "${PROJECT_ROOT}"
 
-python scripts/record_body_teaching.py \
+python src/robodeploy/scripts/record_body_teaching.py \
     --robot.type=bi_arx_x5 \
     --robot.left_can_port="${LEFT_CAN}" \
     --robot.right_can_port="${RIGHT_CAN}" \

@@ -66,7 +66,7 @@ class RecordConfig:
     policy: PolicyClientConfig | None = None
 
     # Output settings
-    output_dir: str = "./s1_data"
+    output_dir: str = "auto"  # "auto" → outputs/<robot_name>/<MMDD>_<HHMM>
     repo_id: str = "dataset"
     task: str = "fold the box"
     fps: int = 30

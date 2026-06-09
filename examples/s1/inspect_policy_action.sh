@@ -46,7 +46,8 @@ LOG_FILE="policy_actions.jsonl"
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-INSPECT_SCRIPT="$SCRIPT_DIR/inspect_policy_action.py"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+INSPECT_SCRIPT="$PROJECT_ROOT/scripts/inspect_policy_action.py"
 
 if [ ! -f "$INSPECT_SCRIPT" ]; then
     echo "错误: 找不到 $INSPECT_SCRIPT"

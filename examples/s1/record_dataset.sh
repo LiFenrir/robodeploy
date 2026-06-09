@@ -12,8 +12,6 @@
 #   export PYTHONPATH=/path/to/YHRG/S1_SDK_V2/src:$PYTHONPATH
 #===============================================================================
 
-export PYTHONPATH="/home/innovation/robodeploy/scripts:$PYTHONPATH"
-
 set -e
 
 # ==============================================================================
@@ -51,8 +49,8 @@ CAMERA_CONFIG='{"front":{"type":"intelrealsense","serial_number_or_name":"135122
 
 # Output（数据输出）
 #------------------------------------------------------------------------------
-OUTPUT_DIR="./s1_data"
-REPO_ID="lerobot/bi_s1_$(date +%m%d_%H%M)"
+OUTPUT_DIR="${PROJECT_ROOT}/output"
+REPO_ID="bi_s1/bi_s1_$(date +%m%d_%H%M)"
 TASK="hang cloths"
 FPS=30
 EPISODE_TIME_S=6000                         # 每个 episode 最大时长（秒），超时自动触发保存
@@ -82,9 +80,10 @@ WEBUI_PORT=8080
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RECORD_SCRIPT="$SCRIPT_DIR/record_dataset.py"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+RECORD_SCRIPT="$PROJECT_ROOT/src/robodeploy/scripts/record_dataset.py"
 
-# 检查 record_hybrid.py 是否存在
+# 检查 record_dataset.py 是否存在
 if [ ! -f "$RECORD_SCRIPT" ]; then
     echo "错误: 找不到 $RECORD_SCRIPT"
     exit 1
