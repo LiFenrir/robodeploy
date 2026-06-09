@@ -351,7 +351,7 @@ def process_episodes_stats_jsonl(
 # ==================== Video Processing ====================
 
 def flip_video(input_path: str, output_path: str, transform: str = "hflip") -> Tuple[str, bool, str]:
-    """Process a single video file via ffmpeg, output H.264.
+    """Process a single video file via ffmpeg, output AV1 (libsvtav1)."""
 
     transform: "copy" = no filter, "hflip" = horizontal mirror,
                "hflip+rotate180" = hflip then 180-degree rotation.
@@ -368,7 +368,7 @@ def flip_video(input_path: str, output_path: str, transform: str = "hflip") -> T
             "ffmpeg", "-y", "-v", "error",
             "-i", input_path,
             "-vf", vf,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:v", "libsvtav1", "-crf", "30",
             "-pix_fmt", "yuv420p",
             output_path,
         ]

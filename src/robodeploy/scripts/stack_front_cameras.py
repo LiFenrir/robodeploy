@@ -59,7 +59,7 @@ def stack_front_videos(
         "-i", front1_path,
         "-filter_complex",
         f"[1:v]rotate=PI:ow=iw:oh=ih[v1]; [0:v][v1]vstack=inputs=2",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-c:v", "libsvtav1", "-crf", "30",
         "-pix_fmt", "yuv420p",
         "-r", str(fps),
         output_path,
