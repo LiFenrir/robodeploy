@@ -39,6 +39,24 @@ def _probe_resolution(video_path: str) -> tuple[int, int, float]:
     return int(w), int(h), float(num) / float(den)
 
 
+def _get_ffmpeg_video_encode_args() -> list[str]:
+    """Return ffmpeg encoder arguments, probing for libsvtav1 availability.
+
+    Uses libsvtav1 (AV1) if available, falling back to libx264 (H.264).
+    """
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True,
+        )
+        if "libsvtav1" in result.stdout:
+            return ["-c:v", "libsvtav1", "-crf", "30"]
+    except Exception:
+        pass
+    # Fallback to widely-available H.264
+    return ["-c:v", "libx264", "-preset", "fast", "-crf", "18"]
+
+
 def stack_front_videos(
     front_path: str,
     front1_path: str,
@@ -59,7 +77,7 @@ def stack_front_videos(
         "-i", front1_path,
         "-filter_complex",
         f"[1:v]rotate=PI:ow=iw:oh=ih[v1]; [0:v][v1]vstack=inputs=2",
-        "-c:v", "libsvtav1", "-crf", "30",
+        *_get_ffmpeg_video_encode_args(),
         "-pix_fmt", "yuv420p",
         "-r", str(fps),
         output_path,

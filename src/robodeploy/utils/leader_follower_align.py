@@ -117,7 +117,10 @@ def interpolate_leader_to_follower(
                     continue
                 arm.joint_control_mit(joint_vals)
             except Exception:
-                pass
+                logger.warning(
+                    f"[Align] arm.joint_control_mit failed for {arm_name} at step {i}/{steps}",
+                    exc_info=True,
+                )
 
         time.sleep(dt)
     logger.info("[Align] Done.")
@@ -151,8 +154,10 @@ def reset_to_zero(
     obs = robot.get_observation()
     start_pos = np.array([obs.get(k, 0.0) for k in keys], dtype=np.float64)
     zero_pos = np.zeros(len(keys), dtype=np.float64)
-    zero_pos[6] = 1.0   # left gripper open
-    zero_pos[13] = 1.0  # right gripper open
+    # Open grippers (set to 1.0) — detect indices from key names
+    for i, key in enumerate(keys):
+        if "gripper" in key:
+            zero_pos[i] = 1.0
 
     max_disp = abs(start_pos).max()
     steps = max(1, int(np.ceil(max_disp / max_step)))
@@ -175,7 +180,6 @@ def reset_to_zero(
         interpolate_leader_to_follower(teleop, leader_pos, follower_pos, action_features, dt=dt, max_step=max_step)
         logger.info("[Reset] Leader aligned. Done.")
 
-    # Restore gravity compensation mode for body teaching
-    if saved_mode == "collect" and hasattr(robot, "set_mode"):
-        robot.set_mode("collect")
-        logger.info("[Reset] Restored gravity compensation (collect) mode.")
+    # NOTE: mode restoration is left to the caller, which knows the current
+    # runtime mode (collect vs policy).  robot.config.mode reflects the
+    # startup configuration and may have diverged from the runtime state.

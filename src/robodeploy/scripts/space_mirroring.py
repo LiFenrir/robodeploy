@@ -350,8 +350,26 @@ def process_episodes_stats_jsonl(
 
 # ==================== Video Processing ====================
 
+def _get_ffmpeg_video_encode_args() -> list[str]:
+    """Return ffmpeg encoder arguments, probing for libsvtav1 availability.
+
+    Uses libsvtav1 (AV1) if available, falling back to libx264 (H.264).
+    """
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True,
+        )
+        if "libsvtav1" in result.stdout:
+            return ["-c:v", "libsvtav1", "-crf", "30"]
+    except Exception:
+        pass
+    # Fallback to widely-available H.264
+    return ["-c:v", "libx264", "-preset", "fast", "-crf", "18"]
+
+
 def flip_video(input_path: str, output_path: str, transform: str = "hflip") -> Tuple[str, bool, str]:
-    """Process a single video file via ffmpeg, output AV1 (libsvtav1)."""
+    """Process a single video file via ffmpeg, output AV1 (libsvtav1).
 
     transform: "copy" = no filter, "hflip" = horizontal mirror,
                "hflip+rotate180" = hflip then 180-degree rotation.
@@ -368,7 +386,7 @@ def flip_video(input_path: str, output_path: str, transform: str = "hflip") -> T
             "ffmpeg", "-y", "-v", "error",
             "-i", input_path,
             "-vf", vf,
-            "-c:v", "libsvtav1", "-crf", "30",
+            *_get_ffmpeg_video_encode_args(),
             "-pix_fmt", "yuv420p",
             output_path,
         ]

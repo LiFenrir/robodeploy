@@ -465,6 +465,18 @@ def run_record(cfg) -> None:
         if stream_buffer:
             stream_buffer.clear()
         reset_to_zero(robot, None, action_features, max_step=cfg.align_max_step)
+        # reset_to_zero leaves the arm in control mode (needed for position
+        # commands during zeroing).  Restore the correct hardware mode based
+        # on the current runtime state, which may differ from robot.config.mode
+        # after a P-key toggle in MIXED mode.
+        if hasattr(robot, "set_mode"):
+            _MODE_TO_HW = {ControlMode.COLLECT: "collect", ControlMode.POLICY: "control"}
+            hw_mode = _MODE_TO_HW.get(state_ref["mode"])
+            if hw_mode is not None:
+                robot.set_mode(hw_mode)
+                print(f"[Reset] Restored {hw_mode} mode.")
+            else:
+                print(f"[Reset] WARNING: Unknown mode {state_ref['mode']}, leaving in control mode.")
 
     # WebUI server — handlers only set pending_ref; main loop executes them.
     if cfg.webui_port > 0:

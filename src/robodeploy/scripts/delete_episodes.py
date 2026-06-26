@@ -28,7 +28,7 @@ def delete_episodes(dataset_root: str | Path, episode_indices: list[int]):
         raise ValueError(f"数据集目录无效，未找到 meta/info.json: {root}")
 
     # 1. 备份到父级文件夹
-    backup_name = f"{root.name}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    backup_name = f"{root.name}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
     backup_dir = root.parent / backup_name
     shutil.copytree(root, backup_dir)
     print(f"已备份到: {backup_dir}")
@@ -66,6 +66,7 @@ def delete_episodes(dataset_root: str | Path, episode_indices: list[int]):
     new_episodes = []
     new_stats = []
     total_frames = 0
+    total_videos_actual = 0
 
     for new_idx, old_idx in enumerate(kept):
         old_chunk = old_idx // chunks_size
@@ -95,6 +96,7 @@ def delete_episodes(dataset_root: str | Path, episode_indices: list[int]):
                     )
                     new_vid.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(old_vid, new_vid)
+                    total_videos_actual += 1
 
         # 更新 episodes 和 episodes_stats 元数据
         ep = episodes[old_idx].copy()
@@ -108,16 +110,34 @@ def delete_episodes(dataset_root: str | Path, episode_indices: list[int]):
         total_frames += ep_len
 
     # 4. 用临时目录中的 data 和 videos 替换原目录
+    # Move old directories aside first so a failed copy doesn't leave the
+    # dataset in a partially-deleted state.
+    backups = {}
     for sub in ["data", "videos"]:
-        if (root / sub).exists():
-            shutil.rmtree(root / sub)
+        src_sub = root / sub
+        if src_sub.exists():
+            bak_sub = root / f".{sub}_bak"
+            shutil.move(str(src_sub), str(bak_sub))
+            backups[sub] = bak_sub
+    for sub in ["data", "videos"]:
         if (tmp_dir / sub).exists():
-            shutil.copytree(tmp_dir / sub, root / sub)
+            try:
+                shutil.copytree(tmp_dir / sub, root / sub)
+            except Exception:
+                # Restore the original directories on failure
+                for s, bak in backups.items():
+                    if bak.exists() and not (root / s).exists():
+                        shutil.move(str(bak), str(root / s))
+                raise
+    # Clean up the backups
+    for bak in backups.values():
+        if bak.exists():
+            shutil.rmtree(bak)
 
     # 5. 更新 info.json
     info["total_episodes"] = len(kept)
     info["total_frames"] = total_frames
-    info["total_videos"] = len(kept) * len(video_keys)
+    info["total_videos"] = total_videos_actual
     info["total_chunks"] = (len(kept) - 1) // chunks_size + 1 if kept else 0
     info["splits"] = {"train": f"0:{len(kept)}"} if kept else {}
 
