@@ -56,13 +56,13 @@ class BiS1Leader(Teleoperator):
         from S1_SDK.S1_arm import S1_arm, control_mode
 
         # Create left arm instance (leader mode - no collision checking needed)
-        # self.left_arm = S1_arm(
-        #     mode=control_mode.only_real,
-        #     dev=config.left_arm_port,
-        #     end_effector=config.left_end_effector,
-        #     check_collision=False,
-        #     # arm_version=config.left_arm_version,
-        # )
+        self.left_arm = S1_arm(
+            mode=control_mode.only_real,
+            dev=config.left_arm_port,
+            end_effector=config.left_end_effector,
+            check_collision=False,
+            # arm_version=config.left_arm_version,
+        )
 
         # Create right arm instance
         self.right_arm = S1_arm(
@@ -101,6 +101,7 @@ class BiS1Leader(Teleoperator):
 
         # Enable motors for reading
         self.right_arm.enable()
+        self.left_arm.enable()
 
         self._is_connected = True
         logger.info(f"{self} connected.")
@@ -127,8 +128,8 @@ class BiS1Leader(Teleoperator):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        # self.left_arm.control_teach(0.08)
-        # self.left_arm.gravity()
+        self.left_arm.control_teach(0.08)
+        self.left_arm.gravity()
         self.right_arm.control_teach(0.08)
         self.right_arm.gravity()
 
@@ -136,10 +137,7 @@ class BiS1Leader(Teleoperator):
 
         # Read left arm position
         start = time.perf_counter()
-        left_pos = self.right_arm.get_pos()
-        left_pos[0] = -left_pos[0]
-        left_pos[4] = -left_pos[4]
-        left_pos[5] = -left_pos[5]
+        left_pos = self.left_arm.get_pos()
         for i, motor in enumerate(self.MOTOR_NAMES):
             action_dict[f"left_{motor}.pos"] = left_pos[i]
         dt_ms = (time.perf_counter() - start) * 1e3
@@ -212,6 +210,7 @@ class BiS1Leader(Teleoperator):
         # Disable motors
     
         self.right_arm.close()
+        self.left_arm.close()
 
         self._is_connected = False
         logger.info(f"{self} disconnected.")

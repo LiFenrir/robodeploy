@@ -24,8 +24,7 @@ ROBOT_TYPE="bi_s1_follower"                  # 单臂: s1_follower, so100_follow
 # 双臂时取消下面两行注释
 LEFT_FOLLOWER_PORT="/dev/left_follower"
 RIGHT_FOLLOWER_PORT="/dev/right_follower"
-# 单臂时取消下一行注释
-# FOLLOWER_PORT="/dev/ttyUSB0"
+
 
 # Teleop（遥操作主端）
 #------------------------------------------------------------------------------
@@ -49,9 +48,9 @@ CAMERA_CONFIG='{"front":{"type":"intelrealsense","serial_number_or_name":"135122
 
 # Output（数据输出）
 #------------------------------------------------------------------------------
-OUTPUT_DIR="${PROJECT_ROOT}/output"
+OUTPUT_DIR="./outputs"
 REPO_ID="bi_s1/bi_s1_$(date +%m%d_%H%M)"
-TASK="hang cloths"
+TASK="Grasp a single layer of the cloth with the gripper, then place the cloth onto the board"
 FPS=30
 EPISODE_TIME_S=6000                         # 每个 episode 最大时长（秒），超时自动触发保存
 
@@ -63,9 +62,9 @@ CONTROL_MODE_INITIAL="teleop"                # mixed 模式下的初始控制方
 # Temporal Smoothing（时序平滑 — 策略推理时生效）
 #------------------------------------------------------------------------------
 USE_TEMPORAL_SMOOTHING=true                  # true 启用 | false 关闭
-INFERENCE_RATE=2.6                           # 推理频率（Hz）
-LATENCY_K=12                                 # 丢弃旧块前 k 步
-MIN_SMOOTH_STEPS=8                           # 重叠区最小长度
+INFERENCE_RATE=7                           # 推理频率（Hz）
+LATENCY_K=4                                 # 丢弃旧块前 k 步
+MIN_SMOOTH_STEPS=12                           # 重叠区最小长度
 
 # Alignment（对齐参数）
 #------------------------------------------------------------------------------
@@ -150,7 +149,7 @@ fi
 #------------------------------------------------------------------------------
 print_config() {
     echo "=============================================="
-    echo "    S1 数据采集 + 策略推理 (Hybrid Writer)"
+    echo "    S1 数据采集 + 策略推理 "
     echo "=============================================="
     echo "Robot:        $ROBOT_TYPE"
     if [ "$ROBOT_TYPE" = "bi_s1_follower" ] || [ "$ROBOT_TYPE" = "bi_so100_follower" ]; then

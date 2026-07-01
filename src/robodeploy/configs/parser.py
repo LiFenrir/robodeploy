@@ -15,6 +15,7 @@ import importlib
 import inspect
 import pkgutil
 import sys
+import typing
 from argparse import ArgumentError
 from collections.abc import Sequence
 from functools import wraps
@@ -199,7 +200,8 @@ def wrap(config_path: Path | None = None):
         @wraps(fn)
         def wrapper_inner(*args, **kwargs):
             argspec = inspect.getfullargspec(fn)
-            argtype = argspec.annotations[argspec.args[0]]
+            hints = typing.get_type_hints(fn)
+            argtype = hints[argspec.args[0]]
             if len(args) > 0 and type(args[0]) is argtype:
                 cfg = args[0]
                 args = args[1:]

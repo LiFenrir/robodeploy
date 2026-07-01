@@ -1,0 +1,16 @@
+python src/robodeploy/scripts/rl_robot_bridge.py \
+    --robot.type=bi_s1_follower \
+    --robot.left_arm_port=/dev/left_follower \
+    --robot.right_arm_port=/dev/right_follower \
+    --robot.cameras='{"front":{"type":"intelrealsense","serial_number_or_name":"135122077817","width":848,"height":480,"fps":30},"front_1":{"type":"intelrealsense","serial_number_or_name":"935422072733","width":848,"height":480,"fps":30},"left_wrist":{"type":"intelrealsense","serial_number_or_name":"409122273564","width":640,"height":480,"fps":30},"right_wrist":{"type":"intelrealsense","serial_number_or_name":"409122273228","width":640,"height":480,"fps":30}}' \
+    --teleoperator.type=bi_s1_leader \
+    --teleoperator.left_arm_port=/dev/left_leader \
+    --teleoperator.right_arm_port=/dev/right_leader \
+    --intervention_key=i \
+    --host=192.168.1.17 \
+    --port=5556 \
+    --action_dim=14 \
+    --chunk_length=10 \
+    --num_subtasks=5 \
+    --task="Grasp a single layer of the cloth with the gripper, then place the cloth onto the board" \
+    --fps=30
