@@ -1,41 +1,13 @@
 #!/usr/bin/env python
 """
-Body-teaching data collection + inference script with NPY-based storage backend.
+本体示教数据采集 + 推理脚本，NPY 存储后端，O(1) 内存。
 
-Same features as record_dataset.py but designed for body-teaching robots
-(本体示教) where the same physical arm serves as both the teaching device (human
-backdrives it in gravity compensation mode) and the execution device (policy
-commands joint positions). No separate teleoperator hardware needed.
-
-The robot config's `mode` field controls behavior:
-  - "collect": gravity compensation ON, arm backdrivable by human
-  - "control": gravity compensation OFF, arm follows position commands
-
-Features:
-  1. Body-teaching recording with memory-efficient NPY -> MP4 encoding
-  2. OpenPI policy inference with temporal smoothing (StreamActionBuffer)
-  3. Success/failure labeling via keyboard (stored as is_failure_data field, 1=failure)
-  4. Collect/policy mode switching + recording toggle + is_infer_data field (1=inference)
-  5. No leader-follower alignment needed (same arm for teach and execute)
+与 record_dataset.py 功能相同，但用于本体示教机器人（同一机械臂即当示教器又当执行器，
+无需独立 teleoperator）。 机器人 mode 字段: "collect"=重力补偿示教, "control"=位置控制。
 
 Usage:
-    # Bimanual ARX X5 body teaching with 3 RealSense cameras
-    python record_body_teaching.py \
-        --robot.type=bi_arx_x5 \
-        --robot.left_can_port=can0 --robot.right_can_port=can1 \
-        --robot.mode=collect \
-        --robot.cameras='{"top":{"type":"intelrealsense","width":848,"height":480,"fps":30,"serial_number_or_name":"135"},"left_hand":{"type":"intelrealsense","width":848,"height":480,"fps":30,"serial_number_or_name":"260"},"right_hand":{"type":"intelrealsense","width":848,"height":480,"fps":30,"serial_number_or_name":"352"}}' \
-        --policy.type=openpi \
-        --policy.host=localhost --policy.port=8000 \
-        --task="fold the box"
-
-    # Single arm ARX X5
-    python record_body_teaching.py \
-        --robot.type=arx_x5 \
-        --robot.can_port=can0 \
-        --robot.mode=collect \
-        --robot.cameras='{"front":{"type":"intelrealsense","width":848,"height":480,"fps":30,"serial_number_or_name":"123"}}' \
-        --task="pick and place"
+    python record_body_teaching.py --robot.type=arx_x5 --robot.mode=collect \\
+        --robot.cameras='{"front":{"type":"intelrealsense",...}}' --task="pick and place"
 """
 
 # ── 在任何 import 之前：仅过滤 C++ .so 输出中的 "ARX方舟无限" 噪声 ──
@@ -60,14 +32,21 @@ _os.dup2(_wfd, 1)  # stdout → pipe (经 filter 线程)
 _os.dup2(_wfd, 2)  # stderr → pipe
 _os.close(_wfd)
 
-import logging
-import sys
-import threading
-import time
-from enum import Enum
-from pathlib import Path
+import logging  # noqa: E402
+import sys  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+from enum import Enum  # noqa: E402
+from pathlib import Path  # noqa: E402
 
-import numpy as np
+try:
+    import termios as _termios
+    import tty as _tty
+except ImportError:
+    _termios = None  # type: ignore[assignment]
+    _tty = None  # type: ignore[assignment]
+
+import numpy as np  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -76,19 +55,26 @@ logger = logging.getLogger(__name__)
 from robodeploy.cameras import CameraConfig  # noqa: F401, E402
 from robodeploy.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401, E402
 from robodeploy.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401, E402
-from robodeploy.robots import make_robot_from_config  # noqa: F401, E402
-from robodeploy.robots.arx_x5 import arx_x5, bi_arx_x5  # noqa: F401, E402
-from robodeploy.robots.lerobot_robot_my_arm import innov_arm_v1, bi_innov_arm_v1  # noqa: F401, E402
+from robodeploy.configs.parser import wrap  # noqa: E402
+from robodeploy.datasets.npy_backend import BackgroundVideoEncoder, LeRobotDatasetNPY  # noqa: E402
+from robodeploy.datasets.utils import (  # noqa: E402
+    DEFAULT_FEATURES,
+    RECORDING_EXTRA_FEATURES,
+    build_dataset_frame,
+    hw_to_dataset_features,
+)
 from robodeploy.policy_clients import (  # noqa: F401, E402
     openpi,
 )
 from robodeploy.policy_clients.utils import make_policy_client_from_config  # noqa: F401, E402
-from robodeploy.webui.server import WebUIServer
-from robodeploy.utils.stream_buffer import StreamActionBuffer
-from robodeploy.utils.leader_follower_align import reset_to_zero
-from robodeploy.utils.keyboard_control import get_keypress, prompt_success_failure
-from robodeploy.datasets.utils import build_dataset_frame, hw_to_dataset_features
-from robodeploy.datasets.npy_backend import BackgroundVideoEncoder, LeRobotDatasetNPY
+from robodeploy.robots import make_robot_from_config  # noqa: F401, E402
+from robodeploy.robots.arx_x5 import arx_x5, bi_arx_x5  # noqa: F401, E402
+from robodeploy.robots.lerobot_robot_my_arm import bi_innov_arm_v1, innov_arm_v1  # noqa: F401, E402
+from robodeploy.scripts.record_config_body_teaching import RecordBodyTeachingConfig  # noqa: E402
+from robodeploy.utils.keyboard_control import get_keypress, prompt_success_failure  # noqa: E402
+from robodeploy.utils.leader_follower_align import reset_to_zero  # noqa: E402
+from robodeploy.utils.stream_buffer import StreamActionBuffer  # noqa: E402
+from robodeploy.webui.server import WebUIServer  # noqa: E402
 
 
 class ControlMode(Enum):
@@ -192,7 +178,7 @@ def record_loop(
         start_loop_t = time.perf_counter()
 
         is_recording = recording_ref.get("recording", False)
-        if is_recording and (dataset.episode_buffer or {}).get("size", 0) == 0:
+        if is_recording and _dataset_buffer_size(dataset) == 0:
             start_episode_t = time.perf_counter()
         elif not is_recording:
             start_episode_t = time.perf_counter()  # keep timestamp near 0 while idle
@@ -201,7 +187,7 @@ def record_loop(
         with obs_lock:
             state_ref["obs"] = observation
         if recording_ref.get("recording", False):
-            recording_ref["frames"] = (dataset.episode_buffer or {}).get("size", 0)
+            recording_ref["frames"] = _dataset_buffer_size(dataset)
 
         if on_key is not None:
             k = get_keypress()
@@ -246,7 +232,7 @@ def record_loop(
             time.sleep(sleep_time)
         timestamp = time.perf_counter() - start_episode_t
 
-        fc = (dataset.episode_buffer or {}).get("size", 0)
+        fc = _dataset_buffer_size(dataset)
         if recording_ref.get("recording", False) and fc > 0 and fc % 60 == 0:
             mode_str = "POL" if state_ref["mode"] == ControlMode.POLICY else "COL"
             switch_hint = "P=switch " if state_ref["control_mode"] == ControlMode.MIXED else ""
@@ -270,7 +256,7 @@ def _save_dataset_episode(dataset: LeRobotDatasetNPY, label: int, task: str) -> 
     if dataset.episode_buffer is None or _dataset_buffer_size(dataset) == 0:
         return
     n = len(dataset.episode_buffer["is_failure_data"])
-    dataset.episode_buffer["is_failure_data"] = [np.array([1 - label], dtype=np.int64)] * n
+    dataset.episode_buffer["is_failure_data"] = [np.int64(1 - label)] * n
     dataset.save_episode_async()
 
 
@@ -282,7 +268,6 @@ def _discard_dataset_episode(dataset: LeRobotDatasetNPY) -> None:
 
 def run_record(cfg) -> None:
     """Main entry point, receives a RecordConfig from draccus."""
-    from robodeploy.policy_clients.utils import make_policy_client_from_config
 
     # Create robot
     robot = make_robot_from_config(cfg.robot)
@@ -319,17 +304,7 @@ def run_record(cfg) -> None:
                     "has_audio": False,
                 }
 
-    # Standard feature entries matching parquet columns
-    standard_fts = {
-        "timestamp": {"dtype": "float64", "shape": (1,), "names": None},
-        "frame_index": {"dtype": "int64", "shape": (1,), "names": None},
-        "episode_index": {"dtype": "int64", "shape": (1,), "names": None},
-        "index": {"dtype": "int64", "shape": (1,), "names": None},
-        "task_index": {"dtype": "int64", "shape": (1,), "names": None},
-        "is_failure_data": {"dtype": "int64", "shape": (1,), "names": None},
-        "is_infer_data": {"dtype": "int64", "shape": (1,), "names": None},
-    }
-    info_features = {**action_fts, **obs_fts, **standard_fts}
+    info_features = {**action_fts, **obs_fts, **DEFAULT_FEATURES, **RECORDING_EXTRA_FEATURES}
 
     # Create NPY-backed dataset
     dataset_root = Path(cfg.output_dir) / cfg.repo_id
@@ -439,18 +414,20 @@ def run_record(cfg) -> None:
                 webui.on_recording_stopped()
 
     def _handle_save(label: int = -1):
-        if recording_ref.get("recording", False) and _dataset_buffer_size(dataset) > 0:
-            recording_ref["recording"] = False
+        if _dataset_buffer_size(dataset) > 0:
+            was_recording = recording_ref.get("recording", False)
+            if was_recording:
+                recording_ref["recording"] = False
             fc = _dataset_buffer_size(dataset)
             print(f"[Save] Episode {recording_ref['episode']}: {fc} frames")
-            if webui is not None:
+            if was_recording and webui is not None:
                 webui.on_recording_stopped()
             if label >= 0:
                 _save_dataset_episode(dataset, label, cfg.task)
                 if webui is not None:
                     webui.on_episode_saved(recording_ref["episode"], fc, label)
                 recording_ref["episode"] += 1
-                print(f"[Save] Submitted (success={label}). Ready for next episode.")
+                print(f"[Save] Submitted (label={label}). Ready for next episode.")
             else:
                 print("[Save] Discarded.")
                 _discard_dataset_episode(dataset)
@@ -470,8 +447,8 @@ def run_record(cfg) -> None:
         # on the current runtime state, which may differ from robot.config.mode
         # after a P-key toggle in MIXED mode.
         if hasattr(robot, "set_mode"):
-            _MODE_TO_HW = {ControlMode.COLLECT: "collect", ControlMode.POLICY: "control"}
-            hw_mode = _MODE_TO_HW.get(state_ref["mode"])
+            _mode_to_hw = {ControlMode.COLLECT: "collect", ControlMode.POLICY: "control"}
+            hw_mode = _mode_to_hw.get(state_ref["mode"])
             if hw_mode is not None:
                 robot.set_mode(hw_mode)
                 print(f"[Reset] Restored {hw_mode} mode.")
@@ -523,9 +500,6 @@ def run_record(cfg) -> None:
         logger.info(f"WebUI started at http://0.0.0.0:{cfg.webui_port}")
 
     # Keyboard handling
-    import termios as _termios
-    import tty as _tty
-
     _stdin_fd = sys.stdin.fileno()
     _old_termios = None
 
@@ -575,7 +549,7 @@ def run_record(cfg) -> None:
     print(f"  Control: {state_ref['control_mode'].value.upper()}  |  Start: {mode_label.upper()}")
     print(f"  Policy: {'Connected' if (policy and policy.connected) else 'N/A'}  |  Output: {cfg.output_dir}")
     print(f"  Task: {cfg.task}")
-    print(f"  Storage: NPY (O(1) RAM)")
+    print("  Storage: NPY (O(1) RAM)")
     print(f"  Controls: {switch_hint}R=rec  S=save+label  Z=zero-reset  Esc=exit")
     print("=" * 60)
     input("Press [Enter] to start...")
@@ -607,13 +581,16 @@ def run_record(cfg) -> None:
                 recording_ref["recording"] = False
                 fc = _dataset_buffer_size(dataset)
                 print(f"[Auto-save] Episode {recording_ref['episode']}: {fc} frames (time limit)")
+                if webui is not None:
+                    webui.on_recording_stopped()
                 label = prompt_success_failure()
                 if label >= 0:
                     _save_dataset_episode(dataset, label, cfg.task)
+                    if webui is not None:
+                        webui.on_episode_saved(recording_ref["episode"], fc, label)
                     recording_ref["episode"] += 1
                 else:
                     _discard_dataset_episode(dataset)
-                # Clear any pending WebUI command since we just handled a save
                 pending_ref["cmd"] = None
                 pending_ref["data"] = None
     except KeyboardInterrupt:
@@ -636,9 +613,6 @@ def run_record(cfg) -> None:
 
 
 def main() -> None:
-    from robodeploy.configs.parser import wrap
-    from robodeploy.scripts.record_config_body_teaching import RecordBodyTeachingConfig
-
     @wrap()
     def _main(cfg: RecordBodyTeachingConfig) -> None:
         run_record(cfg)

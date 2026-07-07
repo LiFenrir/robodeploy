@@ -1,59 +1,25 @@
 #!/usr/bin/env python
 """
-Unified data collection + inference script with NPY-based storage backend.
+机器人数据采集 + 推理脚本，NPY 存储后端，O(1) 内存。
 
-Three control modes (teleop, policy inference, mixed),
-temporal smoothing, leader-follower alignment, WebUI, labeling) but uses
-LeRobotDataset with NPY intermediate storage instead of in-memory accumulation:
-
-  - Each camera frame is written to disk immediately as a raw .npy file
-    (no PNG compression overhead, O(1) RAM regardless of episode length).
-  - At episode end, .npy files are stream-encoded directly to MP4 via
-    av.VideoFrame.from_ndarray() (no PNG decode step).
-  - Parquet + metadata managed by LeRobotDataset.
-
-Supports any robot platform registered in lerobot (bi_s1_follower, so100_follower,
-etc.) by simply changing --robot.type and --teleop.type.
-
-Uses draccus for configuration parsing with ChoiceRegistry support.
-
-Features:
-  1. Teleoperation recording with memory-efficient NPY -> MP4 encoding
-  2. OpenPI policy inference with temporal smoothing (StreamActionBuffer)
-  3. Success/failure labeling via keyboard (stored as is_failure_data field, 1=failure)
-  4. Teleop/inference mode switching + recording toggle + is_infer_data field (1=inference)
-  5. Leader-follower alignment on inference->teleop switch (cosine interpolation)
+控制模式: teleop / policy / mixed。 支持 RTC 和 temporal smoothing，
+leader-follower 对齐，WebUI 监控，键盘标注成功/失败。
 
 Usage:
-    # S1 bimanual (cameras configured via robot.cameras)
-    python record_dataset.py \
-        --robot.type=bi_s1_follower \
-        --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
-        --robot.cameras='{"front":{"type":"intelrealsense","width":848,"height":480,"fps":30}}' \
-        --teleop.type=bi_s1_leader \
-        --teleop.left_arm_port=/dev/ttyUSB2 --teleop.right_arm_port=/dev/ttyUSB3 \
-        --policy.type=openpi \
-        --policy.host=localhost --policy.port=8000 \
-        --task="fold the box"
-
-    # Single arm S1
-    python record_dataset.py \
-        --robot.type=s1_follower \
-        --robot.port=/dev/ttyUSB0 \
-        --robot.cameras='{"front":{"type":"intelrealsense","width":848,"height":480,"fps":30}}' \
-        --teleop.type=s1_leader \
-        --teleop.port=/dev/ttyUSB1 \
-        --task="pick and place"
+    python record_dataset.py --robot.type=s1_follower --robot.port=/dev/ttyUSB0 \\
+        --teleop.type=s1_leader --teleop.port=/dev/ttyUSB1 --task="pick and place"
 """
 
 import logging
 import sys
 import threading
 import time
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
 import numpy as np
+import torch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -62,27 +28,37 @@ logger = logging.getLogger(__name__)
 from robodeploy.cameras import CameraConfig  # noqa: F401, E402
 from robodeploy.cameras.opencv.configuration_opencv import OpenCVCameraConfig  # noqa: F401, E402
 from robodeploy.cameras.realsense.configuration_realsense import RealSenseCameraConfig  # noqa: F401, E402
+from robodeploy.policy_clients import (  # noqa: F401, E402
+    make_policy_client_from_config,
+    openpi,
+)
 from robodeploy.robots import (  # noqa: F401, E402
     bi_s1_follower,
     bi_so100_follower,
+    make_robot_from_config,
     s1_follower,
     so100_follower,
 )
 from robodeploy.robots.lerobot_robot_my_arm import (  # noqa: F401, E402
-    innov_arm_v1,
     bi_innov_arm_v1,
+    innov_arm_v1,
 )
 from robodeploy.teleoperators import (  # noqa: F401, E402
     bi_s1_leader,
     bi_so100_leader,
+    make_teleoperator_from_config,
     s1_leader,
     so100_leader,
 )
-from robodeploy.policy_clients import (  # noqa: F401, E402
-    openpi,
-)
-from robodeploy.webui.server import WebUIServer
 from robodeploy.utils.stream_buffer import StreamActionBuffer  # noqa: F401, E402
+from robodeploy.webui.server import WebUIServer  # noqa: E402
+
+try:
+    import termios
+    import tty
+except ImportError:
+    termios = None  # type: ignore[assignment]
+    tty = None  # type: ignore[assignment]
 
 try:
     from openpi.policies.rtc.action_queue import ActionQueue
@@ -91,14 +67,21 @@ except ImportError:
     ActionQueue = None  # type: ignore[assignment]
     RTCConfig = None  # type: ignore[assignment]
 
+from robodeploy.configs.parser import wrap  # noqa: E402
+from robodeploy.datasets.npy_backend import BackgroundVideoEncoder, LeRobotDatasetNPY  # noqa: E402
+from robodeploy.datasets.utils import (  # noqa: E402
+    DEFAULT_FEATURES,
+    RECORDING_EXTRA_FEATURES,
+    build_dataset_frame,
+    hw_to_dataset_features,
+)
+from robodeploy.scripts.record_config import RecordConfig  # noqa: E402
+from robodeploy.utils.keyboard_control import get_keypress, prompt_success_failure  # noqa: F401, E402
 from robodeploy.utils.leader_follower_align import (  # noqa: F401, E402
     interpolate_leader_to_follower,
     reset_to_zero,
+    smooth_inference_action,
 )
-from robodeploy.utils.keyboard_control import get_keypress, prompt_success_failure  # noqa: F401, E402
-from robodeploy.datasets.lerobot_dataset import LeRobotDataset
-from robodeploy.datasets.npy_backend import BackgroundVideoEncoder, LeRobotDatasetNPY
-from robodeploy.datasets.utils import build_dataset_frame, hw_to_dataset_features
 
 
 class ControlMode(Enum):
@@ -131,6 +114,25 @@ def _stack_front_cameras(images: dict) -> dict:
         images["front"] = np.concatenate([front, np.rot90(front_1, 2)], axis=0)
         del images["front_1"]
     return images
+
+
+def _binarize_gripper_state(state: np.ndarray) -> None:
+    """Binarize gripper joints (indices 6, 13): < 0.2 → 0, >= 0.2 → 1, in-place."""
+    for gi in (6, 13):
+        if gi < len(state):
+            state[gi] = 0.0 if state[gi] < 0.2 else 1.0
+
+
+def _prepare_inference_input(
+    obs: dict, action_features: dict[str, type], camera_names: list[str]
+) -> tuple[np.ndarray, dict]:
+    """Extract state vector and image dict from observation dict for policy inference."""
+    state = np.array([obs.get(k, 0.0) for k in action_features], dtype=np.float64)
+    _binarize_gripper_state(state)
+    images = {cam: np.asarray(obs[cam]) for cam in camera_names if cam in obs}
+    _stack_front_cameras(images)
+    return state, images
+
 
 def _start_inference_thread(
     policy,
@@ -186,13 +188,7 @@ def _start_inference_thread(
                 continue
 
             try:
-                state = np.array([obs.get(k, 0.0) for k in action_features], dtype=np.float64)
-                # Binarize gripper state at joint indices 6 and 13: < 0.2 -> 0, >= 0.2 -> 1
-                for gi in (6, 13):
-                    if gi < len(state):
-                        state[gi] = 0.0 if state[gi] < 0.2 else 1.0
-                images = {cam: np.asarray(obs[cam]) for cam in camera_names if cam in obs}
-                _stack_front_cameras(images)
+                state, images = _prepare_inference_input(obs, action_features, camera_names)
 
                 if action_queue is not None:
                     # RTC mode: pass prev_chunk_left_over and inference_delay
@@ -207,7 +203,6 @@ def _start_inference_thread(
                     result = policy.infer(images, state, task, **rtc_kwargs)
                     actions = result.get("actions", None)
                     if actions is not None and len(actions) > 0:
-                        import torch
                         actions_tensor = torch.from_numpy(np.asarray(actions))
                         action_queue.merge(
                             original_actions=actions_tensor,
@@ -255,11 +250,14 @@ def record_loop(
     on_key: callable = None,
     process_pending: callable = None,
     action_queue: "ActionQueue | None" = None,
+    action_smooth_max_step: float = 0.0,
 ) -> None:
     """Main control loop using lerobot abstract interfaces with NPY dataset storage."""
     start_episode_t = time.perf_counter()
     timestamp = 0.0
     was_recording = recording_ref.get("recording", False)
+    prev_infer_action: dict | None = None
+    was_policy = False
 
     while timestamp < control_time_s and not stop_ref["stop"]:
         start_loop_t = time.perf_counter()
@@ -268,6 +266,7 @@ def record_loop(
         if is_recording and not was_recording:
             start_episode_t = time.perf_counter()
             timestamp = 0.0
+            prev_infer_action = None
         elif not is_recording:
             start_episode_t = time.perf_counter()
             timestamp = 0.0
@@ -277,7 +276,7 @@ def record_loop(
         with obs_lock:
             state_ref["obs"] = observation
         if recording_ref.get("recording", False):
-            recording_ref["frames"] = (dataset.episode_buffer or {}).get("size", 0)
+            recording_ref["frames"] = _dataset_buffer_size(dataset)
 
         if on_key is not None:
             k = get_keypress()
@@ -295,7 +294,12 @@ def record_loop(
 
         is_inference = 0
         action = None
-        if state_ref["mode"] == ControlMode.POLICY:
+        is_policy = state_ref["mode"] == ControlMode.POLICY
+        if is_policy and not was_policy:
+            prev_infer_action = None
+        was_policy = is_policy
+
+        if is_policy:
             if action_queue is not None:
                 act_tensor = action_queue.get()
                 act_np = act_tensor.cpu().numpy() if act_tensor is not None else None
@@ -310,7 +314,14 @@ def record_loop(
             action = teleop_action
 
         if action is not None:
+            if is_inference and prev_infer_action is not None and action_smooth_max_step > 0:
+                smooth_inference_action(
+                    robot, prev_infer_action, action, action_features,
+                    max_step=action_smooth_max_step,
+                )
             sent_action = robot.send_action(action)
+            if is_inference:
+                prev_infer_action = action
             if recording_ref.get("recording", False):
                 obs_frame = build_dataset_frame(dataset.features, observation, "observation")
                 action_frame = build_dataset_frame(dataset.features, sent_action, "action")
@@ -325,7 +336,7 @@ def record_loop(
             time.sleep(sleep_time)
         timestamp = time.perf_counter() - start_episode_t
 
-        fc = (dataset.episode_buffer or {}).get("size", 0)
+        fc = _dataset_buffer_size(dataset)
         if recording_ref.get("recording", False) and fc > 0 and fc % 60 == 0:
             mode_str = "POL" if state_ref["mode"] == ControlMode.POLICY else "TEL"
             switch_hint = "P=switch " if state_ref["control_mode"] == ControlMode.MIXED else ""
@@ -361,9 +372,6 @@ def _discard_dataset_episode(dataset: LeRobotDatasetNPY) -> None:
 
 def run_record(cfg) -> None:
     """Main entry point, receives a RecordConfig from draccus."""
-    from robodeploy.robots import make_robot_from_config
-    from robodeploy.teleoperators import make_teleoperator_from_config
-    from robodeploy.policy_clients import make_policy_client_from_config
 
     # Create robot
     robot = make_robot_from_config(cfg.robot)
@@ -371,11 +379,8 @@ def run_record(cfg) -> None:
     logger.info(f"Robot '{robot.name}' connected.")
 
     if cfg.output_dir == "auto":
-        from datetime import datetime
-
         now = datetime.now()
         cfg.output_dir = f"outputs/{robot.name}/{now.strftime('%m%d_%H%M')}"
-    is_bimanual = cfg.robot.type.startswith("bi_")
 
     # Determine control mode
     control_mode = ControlMode(cfg.control_mode)
@@ -416,17 +421,7 @@ def run_record(cfg) -> None:
                     "has_audio": False,
                 }
 
-    # Standard feature entries matching parquet columns
-    standard_fts = {
-        "timestamp": {"dtype": "float64", "shape": (1,), "names": None},
-        "frame_index": {"dtype": "int64", "shape": (1,), "names": None},
-        "episode_index": {"dtype": "int64", "shape": (1,), "names": None},
-        "index": {"dtype": "int64", "shape": (1,), "names": None},
-        "task_index": {"dtype": "int64", "shape": (1,), "names": None},
-        "is_failure_data": {"dtype": "int64", "shape": (1,), "names": None},
-        "is_infer_data": {"dtype": "int64", "shape": (1,), "names": None},
-    }
-    info_features = {**action_fts, **obs_fts, **standard_fts}
+    info_features = {**action_fts, **obs_fts, **DEFAULT_FEATURES, **RECORDING_EXTRA_FEATURES}
 
     # Create NPY-backed dataset (no image_writer — np.save is fast enough synchronously)
     dataset_root = Path(cfg.output_dir) / cfg.repo_id
@@ -490,6 +485,28 @@ def run_record(cfg) -> None:
                 logger.info("RTC mode enabled (ActionQueue), temporal smoothing disabled.")
         elif cfg.use_temporal_smoothing:
             stream_buffer = StreamActionBuffer(state_dim=len(action_features))
+
+    # ---- 推理预热 ----
+    if cfg.warmup_rounds > 0 and policy is not None and policy.connected:
+        logger.info("=" * 60)
+        logger.info("推理预热 (%d rounds)...", cfg.warmup_rounds)
+        obs = robot.get_observation()
+        warmup_state, warmup_images = _prepare_inference_input(obs, action_features, camera_names)
+        warmup_times = []
+        for w in range(cfg.warmup_rounds):
+            t0 = time.monotonic()
+            try:
+                policy.infer(warmup_images, warmup_state, cfg.task)
+                elapsed = (time.monotonic() - t0) * 1000
+                warmup_times.append(elapsed)
+                logger.info("  预热 %2d/%d: %.0fms", w + 1, cfg.warmup_rounds, elapsed)
+            except Exception as e:
+                logger.warning("  预热 %2d/%d 失败: %s", w + 1, cfg.warmup_rounds, e)
+        if warmup_times:
+            logger.info(
+                "预热完成: avg=%.0fms, min=%.0fms, max=%.0fms",
+                np.mean(warmup_times), np.min(warmup_times), np.max(warmup_times),
+            )
 
     # Start inference thread
     inference_thread = None
@@ -564,18 +581,20 @@ def run_record(cfg) -> None:
                 webui.on_recording_stopped()
 
     def _handle_save(label: int = -1):
-        if recording_ref.get("recording", False) and _dataset_buffer_size(dataset) > 0:
-            recording_ref["recording"] = False
+        if _dataset_buffer_size(dataset) > 0:
+            was_recording = recording_ref.get("recording", False)
+            if was_recording:
+                recording_ref["recording"] = False
             fc = _dataset_buffer_size(dataset)
             print(f"[Save] Episode {recording_ref['episode']}: {fc} frames")
-            if webui is not None:
+            if was_recording and webui is not None:
                 webui.on_recording_stopped()
             if label >= 0:
                 _save_dataset_episode(dataset, label, cfg.task)
                 if webui is not None:
                     webui.on_episode_saved(recording_ref["episode"], fc, label)
                 recording_ref["episode"] += 1
-                print(f"[Save] Submitted (success={label}). Ready for next episode.")
+                print(f"[Save] Submitted (label={label}). Ready for next episode.")
             else:
                 print("[Save] Discarded.")
                 _discard_dataset_episode(dataset)
@@ -638,9 +657,6 @@ def run_record(cfg) -> None:
         logger.info(f"WebUI started at http://0.0.0.0:{cfg.webui_port}")
 
     # Keyboard handling
-    import termios as _termios
-    import tty as _tty
-
     _stdin_fd = sys.stdin.fileno()
     _old_termios = None
 
@@ -689,13 +705,13 @@ def run_record(cfg) -> None:
     print(f"  Control: {state_ref['control_mode'].value.upper()}  |  Start: {state_ref['mode'].value.upper()}")
     print(f"  Policy: {'Connected' if (policy and policy.connected) else 'N/A'}  |  Output: {cfg.output_dir}")
     print(f"  Task: {cfg.task}")
-    print(f"  Storage: NPY (O(1) RAM)")
+    print("  Storage: NPY (O(1) RAM)")
     print(f"  Controls: {switch_hint}R=rec  S=save+label  Z=zero-reset  Esc=exit")
     print("=" * 60)
     input("Press [Enter] to start...")
 
-    _old_termios = _termios.tcgetattr(_stdin_fd)
-    _tty.setcbreak(_stdin_fd)
+    _old_termios = termios.tcgetattr(_stdin_fd)
+    tty.setcbreak(_stdin_fd)
 
     print(f"[Control] {state_ref['control_mode'].value.upper()}  [Start] {state_ref['mode'].value.upper()}")
     print(f"[Recording] OFF  (next episode {recording_ref['episode']})")
@@ -718,18 +734,22 @@ def run_record(cfg) -> None:
                 on_key=handle_keypress,
                 process_pending=_process_pending,
                 action_queue=action_queue,
+                action_smooth_max_step=cfg.action_smooth_max_step,
             )
             if recording_ref.get("recording", False) and _dataset_buffer_size(dataset) > 0:
                 recording_ref["recording"] = False
                 fc = _dataset_buffer_size(dataset)
                 print(f"[Auto-save] Episode {recording_ref['episode']}: {fc} frames (time limit)")
+                if webui is not None:
+                    webui.on_recording_stopped()
                 label = prompt_success_failure()
                 if label >= 0:
                     _save_dataset_episode(dataset, label, cfg.task)
+                    if webui is not None:
+                        webui.on_episode_saved(recording_ref["episode"], fc, label)
                     recording_ref["episode"] += 1
                 else:
                     _discard_dataset_episode(dataset)
-                # Clear any pending WebUI command since we just handled a save
                 pending_ref["cmd"] = None
                 pending_ref["data"] = None
     except KeyboardInterrupt:
@@ -744,7 +764,7 @@ def run_record(cfg) -> None:
         if inference_thread is not None:
             inference_thread.join(timeout=5)
         if _old_termios is not None:
-            _termios.tcsetattr(_stdin_fd, _termios.TCSADRAIN, _old_termios)
+            termios.tcsetattr(_stdin_fd, termios.TCSADRAIN, _old_termios)
         robot.disconnect()
         if teleop is not None:
             teleop.disconnect()
@@ -754,9 +774,6 @@ def run_record(cfg) -> None:
 
 
 def main() -> None:
-    from robodeploy.configs.parser import wrap
-    from robodeploy.scripts.record_config import RecordConfig
-
     @wrap()
     def _main(cfg: RecordConfig) -> None:
         run_record(cfg)

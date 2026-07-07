@@ -15,9 +15,15 @@ from pathlib import Path
 
 import numpy as np
 
+from robodeploy.datasets.compute_stats import compute_episode_stats
 from robodeploy.datasets.lerobot_dataset import LeRobotDataset
-from robodeploy.datasets.utils import write_info
-from robodeploy.datasets.video_utils import encode_video_from_npy
+from robodeploy.datasets.utils import (
+    check_timestamps_sync,
+    get_episode_data_index,
+    validate_episode_buffer,
+    write_info,
+)
+from robodeploy.datasets.video_utils import encode_video_from_npy, get_video_info
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +58,6 @@ def _video_encoder_loop(queue: mp.Queue, info_path: str, video_keys: list[str], 
                     info = json.load(f)
                 info["total_videos"] += 1
                 if info["total_videos"] == 1:
-                    from robodeploy.datasets.video_utils import get_video_info
-
                     for key in video_keys:
                         if not info["features"].get(key, {}).get("info"):
                             vpath = str(
@@ -160,7 +164,7 @@ class LeRobotDatasetNPY(LeRobotDataset):
                 continue
             img_dir = self._get_image_file_path(episode_index, key, 0).parent
             if getattr(self, "_bg_encoder", None) is not None:
-                getattr(self, "_bg_encoder").submit(img_dir, video_path, self.fps)
+                self._bg_encoder.submit(img_dir, video_path, self.fps)
             else:
                 encode_video_from_npy(img_dir, video_path, self.fps)
                 shutil.rmtree(img_dir)
@@ -182,8 +186,6 @@ class LeRobotDatasetNPY(LeRobotDataset):
             return
 
         episode_buffer = self.episode_buffer
-
-        from robodeploy.datasets.utils import validate_episode_buffer
 
         validate_episode_buffer(episode_buffer, self.meta.total_episodes, self.features)
 
@@ -217,8 +219,6 @@ class LeRobotDatasetNPY(LeRobotDataset):
 
             self._save_episode_table(episode_buffer, episode_index)
 
-            from robodeploy.datasets.compute_stats import compute_episode_stats
-
             ep_stats = compute_episode_stats(episode_buffer, self.features)
 
             saved_total_videos = self.meta.info.get("total_videos", 0)
@@ -227,11 +227,6 @@ class LeRobotDatasetNPY(LeRobotDataset):
             self.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats)
             self.meta.info["total_videos"] = saved_total_videos
             write_info(self.meta.info, self.meta.root)
-
-            from robodeploy.datasets.utils import (
-                check_timestamps_sync,
-                get_episode_data_index,
-            )
 
             ep_data_index = get_episode_data_index(self.meta.episodes, [episode_index])
             ep_data_index_np = {k: t.numpy() for k, t in ep_data_index.items()}

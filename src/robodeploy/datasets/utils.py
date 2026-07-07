@@ -66,11 +66,17 @@ This dataset was created using [LeRobot](https://github.com/huggingface/lerobot)
 """
 
 DEFAULT_FEATURES = {
-    "timestamp": {"dtype": "float32", "shape": (1,), "names": None},
+    "timestamp": {"dtype": "float64", "shape": (1,), "names": None},
     "frame_index": {"dtype": "int64", "shape": (1,), "names": None},
     "episode_index": {"dtype": "int64", "shape": (1,), "names": None},
     "index": {"dtype": "int64", "shape": (1,), "names": None},
     "task_index": {"dtype": "int64", "shape": (1,), "names": None},
+}
+
+# Extra features used by record_dataset / record_body_teaching
+RECORDING_EXTRA_FEATURES = {
+    "is_failure_data": {"dtype": "int64", "shape": (1,), "names": None},
+    "is_infer_data": {"dtype": "int64", "shape": (1,), "names": None},
 }
 
 
@@ -384,6 +390,11 @@ def get_hf_features_from_features(features: dict) -> datasets.Features:
             raise ValueError(f"Corresponding feature is not valid: {ft}")
 
     return datasets.Features(hf_features)
+
+
+def get_video_keys(features: dict[str, dict]) -> list[str]:
+    """Extract keys of features stored as videos."""
+    return [k for k, v in features.items() if v.get("dtype") == "video"]
 
 
 def _validate_feature_names(features: dict[str, dict]) -> None:

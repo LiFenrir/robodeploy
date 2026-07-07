@@ -21,6 +21,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from robodeploy.datasets.utils import get_video_keys
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,7 @@ def main():
         episodes = list(reader)
 
     features = info.get("features", {})
-    video_keys = [k for k, v in features.items() if v.get("dtype") == "video"]
+    video_keys = get_video_keys(features)
     total_episodes = len(episodes)
 
     # Classify each episode

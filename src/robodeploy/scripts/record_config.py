@@ -26,30 +26,29 @@ Example:
         --task="fold the box"
 """
 
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass
+
+from robodeploy.policy_clients import (  # noqa: F401
+    PolicyClientConfig,
+    lingbot,
+    openpi,
+)
 
 # Import config modules to trigger draccus ChoiceRegistry registration
 from robodeploy.robots import (  # noqa: F401
+    RobotConfig,
     bi_s1_follower,
     bi_so100_follower,
     s1_follower,
     so100_follower,
 )
 from robodeploy.teleoperators import (  # noqa: F401
+    TeleoperatorConfig,
     bi_s1_leader,
     bi_so100_leader,
     s1_leader,
     so100_leader,
 )
-from robodeploy.policy_clients import (  # noqa: F401
-    lingbot,
-    openpi,
-)
-
-from robodeploy.policy_clients import PolicyClientConfig
-from robodeploy.robots import RobotConfig
-from robodeploy.teleoperators import TeleoperatorConfig
 
 
 @dataclass
@@ -82,8 +81,14 @@ class RecordConfig:
     use_rtc: bool = False
     rtc_execution_horizon: int = 10
 
+    # Warmup
+    warmup_rounds: int = 10  # 推理预热轮数，0 跳过
+
     # Alignment
     align_max_step: float = 0.02
+
+    # Action smoothing（推理动作插值平滑，0 关闭）
+    action_smooth_max_step: float = 0.05
 
     # Control mode
     control_mode: str = "mixed"

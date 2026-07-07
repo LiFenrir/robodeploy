@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CHUNK_SIZE = 1000
 
+from robodeploy.datasets.utils import get_video_keys  # noqa: E402
+
 
 def _probe_video(path: str) -> dict | None:
     """Probe video with ffprobe, return {width, height, codec, nb_frames, fps} or None."""
@@ -124,12 +126,6 @@ def main():
     with jsonlines.open(episodes_path) as reader:
         episodes = list(reader)
 
-    tasks_path = src / "meta" / "tasks.jsonl"
-    tasks = []
-    if tasks_path.exists():
-        with jsonlines.open(tasks_path) as reader:
-            tasks = list(reader)
-
     stats_path = src / "meta" / "episodes_stats.jsonl"
     stats_map = {}
     if stats_path.exists():
@@ -138,7 +134,7 @@ def main():
                 stats_map[item["episode_index"]] = item
 
     features = info.get("features", {})
-    video_keys = [k for k, v in features.items() if v.get("dtype") == "video"]
+    video_keys = get_video_keys(features)
     video_template = info.get("video_path", "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4")
 
     # Build expected parquet columns
@@ -239,9 +235,7 @@ def main():
         new_ep_idx += 1
 
     # Rebuild tasks (extract from valid episodes)
-    task_names = sorted(set(
-        ep.get("tasks", [""])[0] for ep in new_episodes if ep.get("tasks")
-    ))
+    task_names = sorted({ep.get("tasks", [""])[0] for ep in new_episodes if ep.get("tasks")})
     task_map = {name: i for i, name in enumerate(task_names)}
     # Update task_index in parquet
     for i, ep in enumerate(new_episodes):

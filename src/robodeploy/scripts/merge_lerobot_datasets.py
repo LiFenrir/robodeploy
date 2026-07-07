@@ -134,7 +134,7 @@ def infer_feature_from_column(col_name: str, pa_type) -> dict:
 def compute_merged_features(all_infos: list[dict], all_ds_paths: list[Path]) -> dict:
     """Compute the union of features with legacy→canonical field name normalization."""
     merged: dict = {}
-    for ds_path, info in zip(all_ds_paths, all_infos):
+    for ds_path, info in zip(all_ds_paths, all_infos, strict=True):
         src_features = info.get("features", {})
         src_parquet_cols = _get_parquet_columns(ds_path)
 
@@ -163,8 +163,7 @@ def _get_parquet_columns(ds_path: Path) -> dict[str, pa.DataType]:
     return {name: schema.field(name).type for name in schema.names}
 
 
-def get_video_keys(features: dict) -> list[str]:
-    return [k for k, v in features.items() if v.get("dtype") == "video"]
+from robodeploy.datasets.utils import get_video_keys  # noqa: E402
 
 
 def _column_default(name: str, n_frames: int, defaults: dict) -> pa.Array | None:
@@ -361,7 +360,6 @@ def main():
     robot_type = all_infos[0].get("robot_type", "")
 
     # Build ordered column list (video keys excluded from parquet; DEFAULT_FEATURES always present)
-    default_feature_keys = {"timestamp", "frame_index", "episode_index", "index", "task_index"}
     parquet_columns = [k for k in features if k not in video_keys]
     # Ensure default keys come first in standard order
     ordered_columns = sorted(parquet_columns, key=lambda k: (
@@ -399,7 +397,7 @@ def main():
     new_episodes = []
     new_stats_entries = []
 
-    for ds_idx, (ds_path, episodes, stats) in enumerate(zip(ds_paths, all_episodes, all_stats)):
+    for _ds_idx, (ds_path, episodes, stats) in enumerate(zip(ds_paths, all_episodes, all_stats, strict=True)):
         logger.info(f"Processing {ds_path.name}: {len(episodes)} episodes")
         for ep in episodes:
             old_ep_idx = ep["episode_index"]

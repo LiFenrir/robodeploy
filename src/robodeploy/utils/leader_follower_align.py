@@ -183,3 +183,46 @@ def reset_to_zero(
     # NOTE: mode restoration is left to the caller, which knows the current
     # runtime mode (collect vs policy).  robot.config.mode reflects the
     # startup configuration and may have diverged from the runtime state.
+
+
+def smooth_inference_action(
+    robot,
+    prev_action: dict[str, float],
+    new_action: dict[str, float],
+    action_features: dict[str, type],
+    max_step: float = 0.05,
+    dt: float = 0.005,
+) -> None:
+    """推理动作插值平滑，防止单步跳变过大。仅在推理模式下使用。
+
+    与 reset_to_zero / interpolate_leader_to_follower 一致的 cosine 缓入缓出。
+    若新旧动作单关节最大位移 ≤ max_step，直接 return（无需插值）。
+    中间段通过 robot.send_action() 发送，最后一步由调用方执行。
+
+    Args:
+        robot: Robot 实例。
+        prev_action: 上一帧已执行的动作 dict。
+        new_action: 当前帧推理输出的动作 dict。
+        action_features: robot.action_features。
+        max_step: 单步最大关节变化 (rad)，0 表示关闭。
+        dt: 子步间隔 (秒)。
+    """
+    if max_step <= 0:
+        return
+
+    keys = list(action_features.keys())
+    prev_np = np.array([prev_action.get(k, 0.0) for k in keys], dtype=np.float64)
+    new_np = np.array([new_action.get(k, 0.0) for k in keys], dtype=np.float64)
+
+    max_disp = float(abs(new_np - prev_np).max())
+    if max_disp <= max_step:
+        return
+
+    steps = int(np.ceil(max_disp / max_step))
+    for i in range(1, steps):
+        t_val = i / steps
+        t_smoothed = (1 - np.cos(t_val * np.pi)) / 2
+        interp = prev_np * (1 - t_smoothed) + new_np * t_smoothed
+        action = {key: float(interp[j]) for j, key in enumerate(keys)}
+        robot.send_action(action)
+        time.sleep(dt)

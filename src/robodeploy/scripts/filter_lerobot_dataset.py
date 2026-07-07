@@ -43,17 +43,17 @@ import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from merge_lerobot_datasets import (  # noqa: E402
-    load_info,
-    load_episodes,
-    load_tasks,
-    load_episodes_stats,
-    get_video_keys,
-    remap_parquet,
-    copy_videos,
-    build_merged_stats_entry,
     DEFAULT_CHUNK_SIZE,
     META_DIR,
+    build_merged_stats_entry,
+    copy_videos,
+    load_episodes,
+    load_episodes_stats,
+    load_info,
+    remap_parquet,
 )
+
+from robodeploy.datasets.utils import get_video_keys  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -129,7 +129,6 @@ def main():
     # ---- Load metadata ----
     info = load_info(ds_path)
     episodes = load_episodes(ds_path)
-    tasks = load_tasks(ds_path)
     stats = load_episodes_stats(ds_path)
 
     if not episodes:
@@ -145,7 +144,6 @@ def main():
     robot_type = info.get("robot_type", "")
 
     # Build parquet column list (same order as merge script)
-    default_feature_keys = {"timestamp", "frame_index", "episode_index", "index", "task_index"}
     parquet_columns = [k for k in features if k not in video_keys]
     ordered_columns = sorted(
         parquet_columns,

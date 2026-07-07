@@ -15,9 +15,10 @@ from pathlib import Path
 
 import jsonlines
 import numpy as np
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+from robodeploy.datasets.utils import get_video_keys
 
 
 def delete_episodes(dataset_root: str | Path, episode_indices: list[int]):
@@ -38,7 +39,7 @@ def delete_episodes(dataset_root: str | Path, episode_indices: list[int]):
     data_path_tmpl = info["data_path"]
     video_path_tmpl = info.get("video_path")
     chunks_size = info["chunks_size"]
-    video_keys = [k for k, ft in info["features"].items() if ft["dtype"] == "video"]
+    video_keys = get_video_keys(info["features"])
 
     episodes = {}
     with jsonlines.open(root / "meta/episodes.jsonl") as reader:

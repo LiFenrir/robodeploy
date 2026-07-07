@@ -458,8 +458,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.batch_encoding_size = batch_encoding_size
         self.episodes_since_last_encoding = 0
 
-        # Unused attributes
-        self.image_writer = None
+        # episode_buffer is initialized to None; subclasses (e.g. LeRobotDatasetNPY) populate it
         self.episode_buffer = None
 
         self.root.mkdir(exist_ok=True, parents=True)

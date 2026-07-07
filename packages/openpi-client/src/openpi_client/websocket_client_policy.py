@@ -9,6 +9,18 @@ from openpi_client import base_policy as _base_policy
 from openpi_client import msgpack_numpy
 
 
+RTC_KEYS = ("prev_chunk_left_over", "inference_delay", "execution_horizon")
+
+
+def _split_rtc_params(kwargs: dict) -> dict:
+    """从 kwargs 中提取 RTC 参数，返回 {key: value} 并从原 dict 中移除。"""
+    rtc = {}
+    for key in RTC_KEYS:
+        if key in kwargs:
+            rtc[key] = kwargs.pop(key)
+    return rtc
+
+
 class WebsocketClientPolicy(_base_policy.BasePolicy):
     """Implements the Policy interface by communicating with a server over websocket.
 
@@ -32,7 +44,8 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
             try:
                 headers = {"Authorization": f"Api-Key {self._api_key}"} if self._api_key else None
                 conn = websockets.sync.client.connect(
-                    self._uri, compression=None, max_size=None, additional_headers=headers
+                    self._uri, compression=None, max_size=None, additional_headers=headers,
+                    ping_interval=None, ping_timeout=None, close_timeout=600,
                 )
                 metadata = msgpack_numpy.unpackb(conn.recv())
                 return conn, metadata
@@ -43,10 +56,7 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
     @override
     def infer(self, obs: Dict, noise=None, **rtc_kwargs) -> Dict:  # noqa: UP006
         # Separate RTC kwargs from other kwargs (like noise).
-        rtc_params = {}
-        for key in ("prev_chunk_left_over", "inference_delay", "execution_horizon"):
-            if key in rtc_kwargs:
-                rtc_params[key] = rtc_kwargs.pop(key)
+        rtc_params = _split_rtc_params(rtc_kwargs)
         # Supports the noise parameter for dsrl_pi0 compatibility.
         if noise is not None:
             obs = {**obs, "noise": noise, **rtc_kwargs}
