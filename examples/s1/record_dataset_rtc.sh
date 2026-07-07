@@ -90,6 +90,25 @@ if [ ! -f "$RECORD_SCRIPT" ]; then
     exit 1
 fi
 
+# 给所有串口赋予读写权限
+SERIAL_PORTS=()
+[ -n "${LEFT_FOLLOWER_PORT:-}" ] && SERIAL_PORTS+=("$LEFT_FOLLOWER_PORT")
+[ -n "${RIGHT_FOLLOWER_PORT:-}" ] && SERIAL_PORTS+=("$RIGHT_FOLLOWER_PORT")
+[ -n "${LEFT_LEADER_PORT:-}" ] && SERIAL_PORTS+=("$LEFT_LEADER_PORT")
+[ -n "${RIGHT_LEADER_PORT:-}" ] && SERIAL_PORTS+=("$RIGHT_LEADER_PORT")
+[ -n "${FOLLOWER_PORT:-}" ] && SERIAL_PORTS+=("$FOLLOWER_PORT")
+[ -n "${LEADER_PORT:-}" ] && SERIAL_PORTS+=("$LEADER_PORT")
+
+for port in "${SERIAL_PORTS[@]}"; do
+    if [ -e "$port" ]; then
+        sudo chmod 777 "$port"
+        echo "  [OK] chmod 777 $port"
+    else
+        echo "  [WARN] $port 不存在，跳过"
+    fi
+done
+echo ""
+
 # 构建 robot 参数 (draccus 风格 --robot.xxx=yyy)
 #------------------------------------------------------------------------------
 ROBOT_ARGS=(
