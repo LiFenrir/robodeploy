@@ -16,7 +16,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from src.robodeploy.datasets.compute_stats import compute_episode_stats
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

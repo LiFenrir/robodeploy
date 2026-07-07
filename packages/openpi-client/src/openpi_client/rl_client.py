@@ -15,12 +15,14 @@ Robot PC → Training PC:
         "done": bool,
         "success": bool,
         "intervention": bool,          # True if human teleop was active
-        "action": np.ndarray [C, d],   # actual executed action chunk
+        "action": np.ndarray [d],       # single-frame human action (intervention only)
+        "rl_active": bool,             # True if RL mode is active
     }
 
 Training PC → Robot PC:
     {
-        "actions": np.ndarray [C, action_dim],
+        "actions": np.ndarray [C, action_dim],       # actor actions (RL mode)
+        "vla_actions": np.ndarray [C, action_dim],   # VLA reference actions
         "reset": bool,
     }
 """
@@ -43,6 +45,7 @@ def pack_rl_observation(
     success: bool = False,
     intervention: bool = False,
     action: np.ndarray | None = None,
+    rl_active: bool = True,
 ) -> dict[str, Any]:
     """Build the message dict for an RL step.
 
@@ -53,7 +56,8 @@ def pack_rl_observation(
         done: Whether the previous episode ended.
         success: Whether the episode ended successfully.
         intervention: Whether human teleop was active during the previous chunk.
-        action: Actual executed action chunk ``[C, d]`` (set when intervention=True).
+        action: Actual executed action ``[d]`` (set when intervention=True).
+        rl_active: Whether RL mode is active (True = actor controls, store transitions).
 
     Returns:
         Dict ready to be passed to ``WebsocketClientPolicy.infer()``.
@@ -64,6 +68,7 @@ def pack_rl_observation(
         "done": bool(done),
         "success": bool(success),
         "intervention": bool(intervention),
+        "rl_active": bool(rl_active),
     }
     if action is not None:
         msg["action"] = np.asarray(action, dtype=np.float32)
@@ -77,17 +82,19 @@ def pack_rl_observation(
 
 def unpack_rl_response(
     response: dict[str, Any],
-) -> tuple[np.ndarray | None, bool]:
+) -> tuple[np.ndarray | None, np.ndarray | None, bool]:
     """Parse the Training PC response.
 
     Args:
         response: Response dict from ``WebsocketClientPolicy.infer()``.
 
     Returns:
-        ``(actions, reset)`` where ``actions`` is ``[C, action_dim]``
-        (or ``None`` on reset) and ``reset`` is ``True`` when the
-        Training PC requests a robot reset.
+        ``(actions, vla_actions, reset)`` where:
+        - ``actions``: actor actions ``[C, action_dim]`` for RL mode
+        - ``vla_actions``: VLA reference actions ``[C, action_dim]`` for non-RL mode
+        - ``reset``: ``True`` when the Training PC requests a robot reset.
     """
     actions = response.get("actions")
+    vla_actions = response.get("vla_actions")
     reset = bool(response.get("reset", False))
-    return actions, reset
+    return actions, vla_actions, reset

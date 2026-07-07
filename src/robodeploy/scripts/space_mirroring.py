@@ -484,6 +484,7 @@ def create_mirror_dataset(
     flip_views: list[str] | None = None,
     swap_left_view: str = "observation.images.hand_left",
     swap_right_view: str = "observation.images.hand_right",
+    rotate_wrist: bool = False,
 ) -> None:
     """Create mirrored dataset"""
     if flip_views is None:
@@ -564,18 +565,19 @@ def create_mirror_dataset(
                         print(f"    Processing {chunk_name}/{view} (hflip)...")
                         process_videos(src_view_dir, tgt_view_dir, num_workers, transform="hflip")
 
-                # Swap left/right views: hflip + rotate180
+                # Swap left/right views
+                wrist_transform = "hflip+rotate180" if rotate_wrist else "hflip"
                 right_src = chunk_dir / swap_right_view
                 if right_src.exists() and right_src.is_dir():
                     left_tgt = tgt_chunk_dir / swap_left_view
-                    print(f"    Processing {chunk_name}/{swap_right_view} -> {swap_left_view} (hflip+rotate180)...")
-                    process_videos(right_src, left_tgt, num_workers, transform="hflip+rotate180")
+                    print(f"    Processing {chunk_name}/{swap_right_view} -> {swap_left_view} ({wrist_transform})...")
+                    process_videos(right_src, left_tgt, num_workers, transform=wrist_transform)
 
                 left_src = chunk_dir / swap_left_view
                 if left_src.exists() and left_src.is_dir():
                     right_tgt = tgt_chunk_dir / swap_right_view
-                    print(f"    Processing {chunk_name}/{swap_left_view} -> {swap_right_view} (hflip+rotate180)...")
-                    process_videos(left_src, right_tgt, num_workers, transform="hflip+rotate180")
+                    print(f"    Processing {chunk_name}/{swap_left_view} -> {swap_right_view} ({wrist_transform})...")
+                    process_videos(left_src, right_tgt, num_workers, transform=wrist_transform)
         
         print("✓ All video files processing complete")
     else:
@@ -631,7 +633,9 @@ Examples:
                                help='Left view to swap with right (default: observation.images.hand_left)')
     parser_create.add_argument('--swap-right-view', type=str, default='observation.images.hand_right',
                                help='Right view to swap with left (default: observation.images.hand_right)')
-    
+    parser_create.add_argument('--rotate-wrist', action='store_true',
+                               help='Apply 180° rotation to swapped wrist views (default: hflip only)')
+
     # merge command
     parser_merge = subparsers.add_parser('merge', help='Merge datasets')
     parser_merge.add_argument('--src-paths', nargs='+', required=True, help='Source dataset paths list')
@@ -657,6 +661,8 @@ Examples:
                              help='Left view to swap with right')
     parser_full.add_argument('--swap-right-view', type=str, default='observation.images.hand_right',
                              help='Right view to swap with left')
+    parser_full.add_argument('--rotate-wrist', action='store_true',
+                             help='Apply 180° rotation to swapped wrist views (default: hflip only)')
     parser_full.add_argument('--fps', type=int, default=30, help='FPS (default: 30)')
     parser_full.add_argument('--robot-type', type=str, default='agilex', help='Robot type (default: agilex)')
     parser_full.add_argument('--features-json', type=str, default=None, help='Path to features.json file')
@@ -674,8 +680,9 @@ Examples:
             flip_views=args.flip_views,
             swap_left_view=args.swap_left_view,
             swap_right_view=args.swap_right_view,
+            rotate_wrist=args.rotate_wrist,
         )
-    
+
     elif args.command == 'merge':
         if not MERGE_AVAILABLE:
             print(f"Error: Merge script not found: {_MERGE_SCRIPT}")
@@ -713,6 +720,7 @@ Examples:
             flip_views=args.flip_views,
             swap_left_view=args.swap_left_view,
             swap_right_view=args.swap_right_view,
+            rotate_wrist=args.rotate_wrist,
         )
         print()
         

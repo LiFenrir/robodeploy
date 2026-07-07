@@ -98,11 +98,10 @@ class RLBridgeConfig:
     # Task
     task: str = ""
 
-    # Staged reward: split the task into N sub-tasks.
-    # Press 's' to mark each sub-task complete (partial reward),
-    # the final 's' marks the episode success.
-    # Press 'f' at any point to abort the episode.
-    num_subtasks: int = 1
+    # RL toggle: press this key to toggle RL mode on/off.
+    # RL ON (default): actor controls, transitions stored in replay buffer.
+    # RL OFF: VLA reference controls, transitions NOT stored.
+    rl_toggle_key: str = "t"
 
     # Human intervention (teleoperation takeover)
     # Press this key to toggle teleop control on/off.
@@ -114,7 +113,7 @@ class RLBridgeConfig:
     inference_rate: float = 7.0  # policy inference frequency (Hz), controls chunk overlap depth
 
     # Control
-    fps: int = 15  # robot control frequency
+    fps: int = 30  # robot control frequency
 
     # 每轮 reset 后丢弃前 N 个 chunk，确保流水线排空
     skip_chunks_after_reset: int = 10
@@ -253,10 +252,8 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
     intervention_active = False  # toggled by intervention_key
     actual_action_chunk: np.ndarray | None = None  # actual executed action [C, d]
 
-    # ---- Staged sub-task state ----
-    num_subtasks = max(1, cfg.num_subtasks)
-    current_subtask = 1
-    subtask_reward = 1.0 / num_subtasks  # reward per sub-task completion
+    # ---- RL toggle state ----
+    rl_active: bool = True  # toggled by rl_toggle_key
 
     print("=" * 60)
     print("  RL Robot Bridge")
@@ -266,10 +263,7 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
     steps_per_inference = max(1, int(cfg.fps / cfg.inference_rate))
     print(f"  Smoothing: latency_k={cfg.latency_k}  min_smooth={cfg.min_smooth_steps}  "
           f"inf_rate={cfg.inference_rate}Hz  →  {steps_per_inference} steps/inference")
-    if num_subtasks > 1:
-        print(f"  Staged: {num_subtasks} sub-tasks  |  s=next  f=fail")
-    else:
-        print("  Controls: s=success  f=fail")
+    print(f"  Controls: s=success  f=fail  {cfg.rl_toggle_key}=toggle RL [{('ON' if rl_active else 'OFF')}]")
     if teleop is not None:
         print(f"  Intervention: '{cfg.intervention_key}'=toggle  |  teleop={teleop.name}")
     print("=" * 60)
@@ -294,9 +288,10 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                 obs, reward=reward, done=done, success=success,
                 intervention=intervention_active,
                 action=actual_action_chunk,
+                rl_active=rl_active,
             )
             resp = client.infer(msg)
-            actions, reset_cmd = unpack_rl_response(resp)
+            actions, vla_actions, reset_cmd = unpack_rl_response(resp)
 
             # ---- Handle reset ----
             if reset_cmd:
@@ -312,13 +307,11 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                 done = False
                 success = False
                 chunk_idx = 0
-                current_subtask = 1
                 intervention_active = False
                 actual_action_chunk = None
                 skip_remaining = cfg.skip_chunks_after_reset
                 episode += 1
-                logger.info("Episode %d ready (sub-task 1/%d), will skip %d chunks",
-                            episode, num_subtasks, skip_remaining)
+                logger.info("Episode %d ready, will skip %d chunks", episode, skip_remaining)
 
                 # 等待操作员按 Enter 开始新 episode
                 input("Press Enter to start episode...")
@@ -333,19 +326,29 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                 obs["prompt"] = cfg.task
                 continue
 
-            if actions is None:
+            # Select actions based on RL toggle
+            if rl_active and actions is not None:
+                chosen_actions = actions
+            elif not rl_active and vla_actions is not None:
+                chosen_actions = vla_actions
+            else:
+                chosen_actions = actions  # fallback
+
+            if chosen_actions is None:
                 logger.warning("Empty response from Training PC, retrying...")
                 time.sleep(0.5)
                 continue
 
             # ---- Select action source ----
             if intervention_active and teleop is not None:
-                # Human teleop: collect per-step actions from leader device
+                # 连续遥操循环：fps 跟随 leader，每 steps_per_inference 步
+                # 向 Training PC 发送一次数据（inference_rate），避免卡顿
                 teleop_actions: list[np.ndarray] = []
                 done = False
                 success = False
+                step = 0
 
-                for k in range(steps_per_inference):
+                while not _stop:
                     t_start = time.time()
                     raw = teleop.get_action()
                     act_np = np.array([float(raw.get(key, 0.0)) for key in action_features], dtype=np.float64)
@@ -353,8 +356,7 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                     action_dict = _numpy_to_action_dict(act_np, action_features)
                     robot.send_action(action_dict)
 
-                    # Check keys (including intervention toggle)
-                    key = _check_keypress(extra_keys=cfg.intervention_key)
+                    key = _check_keypress(extra_keys=cfg.intervention_key + cfg.rl_toggle_key)
                     if key == "\x1b" or key == "\x03":
                         logger.info("Esc/Ctrl-C: stopping bridge")
                         _stop = True
@@ -362,49 +364,55 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                     elif key == "f":
                         done = True
                         success = False
-                        logger.info("FAILURE during intervention — episode %d, step %d", episode, k)
+                        logger.info("FAILURE during intervention — episode %d", episode)
                         break
                     elif key == "s":
-                        if current_subtask >= num_subtasks:
-                            reward += subtask_reward
-                            done = True
-                            success = True
-                            logger.info("SUCCESS during intervention — episode %d", episode)
-                            break
-                        else:
-                            reward += subtask_reward
-                            current_subtask += 1
-                            logger.info(
-                                "Sub-task %d/%d done (reward=%.3f) — advancing to %d [intervention]",
-                                current_subtask - 1,
-                                num_subtasks,
-                                reward,
-                                current_subtask,
-                            )
+                        reward += 1.0
+                        done = True
+                        success = True
+                        logger.info("SUCCESS during intervention — episode %d", episode)
+                        break
+                    elif key == cfg.rl_toggle_key:
+                        rl_active = not rl_active
+                        logger.info("RL toggled %s during intervention",
+                                    "ON" if rl_active else "OFF")
                     elif key == cfg.intervention_key:
                         intervention_active = False
                         logger.info("Intervention OFF")
                         break
 
-                    # Enforce control frequency
                     elapsed = time.time() - t_start
                     sleep_t = control_period - elapsed
                     if sleep_t > 0:
                         time.sleep(sleep_t)
 
-                actual_action_chunk = np.stack(teleop_actions, axis=0) if teleop_actions else None
+                    step += 1
+                    if step >= steps_per_inference:
+                        _obs = _extract_observation(robot)
+                        _obs["prompt"] = cfg.task
+                        _chunk = np.stack(teleop_actions[-steps_per_inference:], axis=0)
+                        _msg = pack_rl_observation(
+                            _obs, reward=0.0, done=False, success=False,
+                            intervention=True, action=_chunk, rl_active=rl_active,
+                        )
+                        client.infer(_msg)  # 发送数据，忽略返回动作
+                        step = 0
+
                 action_buffer.clear()
+                actual_action_chunk = None  # 数据已在循环内发送
+                obs = _extract_observation(robot)
+                obs["prompt"] = cfg.task
             else:
                 # Normal mode: use Training PC action chunk
-                actions = np.asarray(actions)  # [C, action_dim]
+                chosen = np.asarray(chosen_actions)  # [C, action_dim]
                 action_buffer.integrate_new_chunk(
-                    actions,
+                    chosen,
                     max_k=cfg.latency_k,
                     min_m=cfg.min_smooth_steps,
                 )
                 actual_action_chunk = None  # Training PC knows what it sent
 
-                # ---- Execute action chunk with staged sub-task detection ----
+                # ---- Execute action chunk ----
                 done = False
                 success = False
 
@@ -417,8 +425,8 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                     action_dict = _numpy_to_action_dict(act_np, action_features)
                     robot.send_action(action_dict)
 
-                    # Check for human reward signal
-                    key = _check_keypress(extra_keys=cfg.intervention_key)
+                    # Check for human reward / toggle signal
+                    key = _check_keypress(extra_keys=cfg.intervention_key + cfg.rl_toggle_key)
                     if key == "\x1b" or key == "\x03":
                         logger.info("Esc/Ctrl-C: stopping bridge")
                         _stop = True
@@ -427,41 +435,19 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                         done = True
                         success = False
                         action_buffer.clear()
-                        logger.info(
-                            "FAILURE — episode %d, chunk %d, step %d, sub-task %d/%d",
-                            episode,
-                            chunk_idx,
-                            k,
-                            current_subtask,
-                            num_subtasks,
-                        )
+                        logger.info("FAILURE — episode %d, chunk %d, step %d", episode, chunk_idx, k)
                         break
                     elif key == "s":
-                        if current_subtask >= num_subtasks:
-                            # Final sub-task complete → episode success
-                            reward += subtask_reward
-                            done = True
-                            success = True
-                            action_buffer.clear()
-                            logger.info(
-                                "SUCCESS — episode %d, all %d sub-tasks done (total reward=%.3f)",
-                                episode,
-                                num_subtasks,
-                                reward,
-                            )
-                            break
-                        else:
-                            # Intermediate sub-task complete — accumulate reward
-                            reward += subtask_reward
-                            current_subtask += 1
-                            logger.info(
-                                "Sub-task %d/%d done (reward=%.3f) — advancing to %d",
-                                current_subtask - 1,
-                                num_subtasks,
-                                reward,
-                                current_subtask,
-                            )
-                            # Continue executing this chunk
+                        reward += 1.0
+                        done = True
+                        success = True
+                        action_buffer.clear()
+                        logger.info("SUCCESS — episode %d (reward=%.3f)", episode, reward)
+                        break
+                    elif key == cfg.rl_toggle_key:
+                        rl_active = not rl_active
+                        logger.info("RL toggled %s (chunk %d, step %d)",
+                                    "ON" if rl_active else "OFF", chunk_idx, k)
                     elif key == cfg.intervention_key and teleop is not None:
                         action_buffer.clear()
                         # Align leader to follower before takeover to avoid joint jumps
