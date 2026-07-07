@@ -25,3 +25,7 @@ class OpenPIPolicyClientConfig(PolicyClientConfig):
 
     host: str = "localhost"
     port: int = 8000
+
+    # RTC (Real-Time Chunking) settings
+    use_rtc: bool = False
+    rtc_execution_horizon: int = 10

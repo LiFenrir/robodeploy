@@ -56,6 +56,7 @@ class OpenPIPolicyClient(PolicyClient):
         images: dict[str, np.ndarray],
         state: np.ndarray,
         prompt: str = "",
+        **rtc_kwargs,
     ) -> dict[str, Any]:
         if not self._connected:
             return {}
@@ -76,7 +77,7 @@ class OpenPIPolicyClient(PolicyClient):
 
         payload = {"state": state, "images": payload_images, "prompt": prompt}
         with self._lock:
-            return self._policy.infer(payload)
+            return self._policy.infer(payload, **rtc_kwargs)
 
     def reset(self) -> None:
         with self._lock:

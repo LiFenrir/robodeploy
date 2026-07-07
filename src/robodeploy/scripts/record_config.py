@@ -72,11 +72,15 @@ class RecordConfig:
     fps: int = 30
     episode_time_s: float = 120.0
 
-    # Temporal smoothing
+    # Temporal smoothing (ignored when use_rtc=True)
     use_temporal_smoothing: bool = True
     inference_rate: float = 3.0
     latency_k: int = 8
     min_smooth_steps: int = 8
+
+    # RTC (Real-Time Chunking) — replaces temporal smoothing when enabled
+    use_rtc: bool = False
+    rtc_execution_horizon: int = 10
 
     # Alignment
     align_max_step: float = 0.02

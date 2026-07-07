@@ -41,11 +41,18 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
                 time.sleep(5)
 
     @override
-    def infer(self, obs: Dict, noise=None, **kwargs) -> Dict:  # noqa: UP006
+    def infer(self, obs: Dict, noise=None, **rtc_kwargs) -> Dict:  # noqa: UP006
+        # Separate RTC kwargs from other kwargs (like noise).
+        rtc_params = {}
+        for key in ("prev_chunk_left_over", "inference_delay", "execution_horizon"):
+            if key in rtc_kwargs:
+                rtc_params[key] = rtc_kwargs.pop(key)
         # Supports the noise parameter for dsrl_pi0 compatibility.
         if noise is not None:
-            obs = {**obs, "noise": noise, **kwargs}
+            obs = {**obs, "noise": noise, **rtc_kwargs}
         message = {"method": "infer", "obs": obs}
+        if rtc_params:
+            message["rtc"] = rtc_params
         data = self._packer.pack(message)
         self._ws.send(data)
         response = self._ws.recv()
