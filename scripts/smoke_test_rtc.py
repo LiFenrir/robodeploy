@@ -46,8 +46,7 @@ logger = logging.getLogger(__name__)
 # RTC 支持检测
 # ---------------------------------------------------------------------------
 try:
-    from openpi.policies.rtc.action_queue import ActionQueue
-    from openpi.policies.rtc.configuration_rtc import RTCConfig
+    from robodeploy.rtc import ActionQueue, RTCConfig
 
     HAS_RTC = True
 except ImportError:

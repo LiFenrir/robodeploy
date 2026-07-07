@@ -61,8 +61,7 @@ except ImportError:
     tty = None  # type: ignore[assignment]
 
 try:
-    from openpi.policies.rtc.action_queue import ActionQueue
-    from openpi.policies.rtc.configuration_rtc import RTCConfig
+    from robodeploy.rtc import ActionQueue, RTCConfig
 except ImportError:
     ActionQueue = None  # type: ignore[assignment]
     RTCConfig = None  # type: ignore[assignment]
@@ -473,7 +472,7 @@ def run_record(cfg) -> None:
     if control_mode != ControlMode.TELEOP:
         if cfg.use_rtc:
             if ActionQueue is None:
-                logger.error("RTC requested but openpi.policies.rtc is not available. "
+                logger.error("RTC requested but robodeploy.rtc failed to import. "
                              "Falling back to temporal smoothing.")
                 stream_buffer = StreamActionBuffer(state_dim=len(action_features))
             else:
