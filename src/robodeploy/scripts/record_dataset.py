@@ -149,13 +149,10 @@ def _start_inference_thread(
     action_queue: "ActionQueue | None" = None,
     rtc_execution_horizon: int = 10,
 ) -> threading.Thread:
-    """Start a daemon thread for async policy inference.
+    """异步推理线程。
 
-    Supports two modes:
-      - RTC mode (action_queue is not None): Uses ActionQueue to manage chunk
-        lifecycle and passes prev_chunk_left_over / inference_delay to policy.
-      - Smoothing mode (buffer is not None): Uses StreamActionBuffer for linear
-        overlap blending (legacy).
+    RTC 模式：收发驱动 —— 收到推理结果后立即发送新观测，通道中仅一个请求。
+    Smoothing 模式：轮询 + 限速（legacy）。
     """
 
     def _run() -> None:
@@ -178,11 +175,34 @@ def _start_inference_thread(
                 time.sleep(0.1)
                 continue
 
-            # RTC mode: prefetch when queue below watermark (covers inference latency)
-            if action_queue is not None and not action_queue.needs_refill():
-                time.sleep(0.01)
+            # Smoothing mode: rate-limited polling
+            if action_queue is None:
+                was_recording = True
+                obs = state_ref.get("obs")
+                if obs is None:
+                    time.sleep(0.1)
+                    continue
+
+                try:
+                    state, images = _prepare_inference_input(obs, action_features, camera_names)
+                    if buffer is not None:
+                        result = policy.infer(images, state, task)
+                        actions = result.get("actions", None)
+                        if actions is not None and len(actions) > 0:
+                            buffer.integrate_new_chunk(
+                                np.asarray(actions),
+                                max_k=latency_k,
+                                min_m=min_smooth_steps,
+                            )
+                    state_ref["inference_ok"] = True
+                except Exception as e:
+                    logger.warning(f"Inference error: {e}")
+                    state_ref["inference_ok"] = False
+                time.sleep(rate)
                 continue
 
+            # RTC mode: request-response cycle, one packet in flight
+            was_recording = True
             obs = state_ref.get("obs")
             if obs is None:
                 time.sleep(0.1)
@@ -191,42 +211,32 @@ def _start_inference_thread(
             try:
                 state, images = _prepare_inference_input(obs, action_features, camera_names)
 
-                if action_queue is not None:
-                    # RTC mode: pass prev_chunk_left_over and inference_delay
-                    action_index_before = action_queue.last_index
-                    rtc_kwargs = {}
-                    prev_leftover = action_queue.get_left_over()
-                    if prev_leftover is not None:
-                        rtc_kwargs["prev_chunk_left_over"] = prev_leftover.cpu().numpy()
-                        rtc_kwargs["inference_delay"] = action_index_before
-                        rtc_kwargs["execution_horizon"] = rtc_execution_horizon
+                # 快照发送时刻 + 全部剩余 action（服务端取前 horizon 步约束）
+                send_index = action_queue.last_index
+                prev_leftover = action_queue.get_left_over()
 
-                    result = policy.infer(images, state, task, **rtc_kwargs)
-                    actions = result.get("actions", None)
-                    if actions is not None and len(actions) > 0:
-                        actions_tensor = torch.from_numpy(np.asarray(actions))
+                rtc_kwargs = {}
+                if prev_leftover is not None:
+                    rtc_kwargs["prev_chunk_left_over"] = prev_leftover.cpu().numpy()
+                    rtc_kwargs["inference_delay"] = 0
+                    rtc_kwargs["execution_horizon"] = rtc_execution_horizon
+
+                result = policy.infer(images, state, task, **rtc_kwargs)
+                actions = result.get("actions", None)
+                if actions is not None and len(actions) > 0:
+                    # 等待期间主循环消耗的步数
+                    wait_steps = action_queue.last_index - send_index
+                    actions = actions[wait_steps:]
+                    if len(actions) > 0:
                         action_queue.merge(
-                            actions=actions_tensor,
+                            actions=torch.from_numpy(np.asarray(actions)),
                             execution_horizon=rtc_execution_horizon,
-                        )
-                elif buffer is not None:
-                    # Non-RTC mode: StreamActionBuffer linear blending
-                    result = policy.infer(images, state, task)
-                    actions = result.get("actions", None)
-                    if actions is not None and len(actions) > 0:
-                        buffer.integrate_new_chunk(
-                            np.asarray(actions),
-                            max_k=latency_k,
-                            min_m=min_smooth_steps,
                         )
 
                 state_ref["inference_ok"] = True
             except Exception as e:
                 logger.warning(f"Inference error: {e}")
                 state_ref["inference_ok"] = False
-            # Non-RTC mode: rate-limit inference thread
-            if action_queue is None:
-                time.sleep(rate)
 
     th = threading.Thread(target=_run, daemon=True)
     th.start()
@@ -495,7 +505,6 @@ def run_record(cfg) -> None:
                 action_queue = ActionQueue(
                     cfg=rtc_cfg,
                     queue_size=cfg.rtc_queue_size,
-                    inference_step_interval=cfg.rtc_inference_step_interval,
                 )
                 logger.info("RTC mode enabled (ActionQueue), temporal smoothing disabled.")
         elif cfg.use_temporal_smoothing:

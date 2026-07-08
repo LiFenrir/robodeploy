@@ -23,24 +23,19 @@ logger = logging.getLogger(__name__)
 class ActionQueue:
     """Thread-safe fixed-size queue for action chunk management.
 
-    Step-based refill trigger + fixed-size blend window.  Three core params:
-      - queue_size: fixed capacity (= server action_chunk)
-      - inference_step_interval: trigger new inference every N consumed steps
-      - execution_horizon (from cfg): blend overlap + RTC guidance constraint window
+    收发驱动 —— 调用方控制推理时机，merge 仅做 crossfade 和队列替换。
 
     Args:
         cfg: RTC configuration (enabled, execution_horizon, ...).
-        queue_size: Fixed queue capacity (= number of actions per inference).
-        inference_step_interval: Trigger inference every N consumed steps.
+        queue_size: Fixed queue capacity (= server action_chunk).
     """
 
-    def __init__(self, cfg: RTCConfig, queue_size: int = 25, inference_step_interval: int = 6):
+    def __init__(self, cfg: RTCConfig, queue_size: int = 50):
         self.queue: Tensor | None = None
         self.lock = Lock()
         self.last_index = 0
         self.cfg = cfg
         self.queue_size = queue_size
-        self.inference_step_interval = inference_step_interval
 
     # ------------------------------------------------------------------
     # Consumption
@@ -76,19 +71,6 @@ class ActionQueue:
         """True if queue exhausted."""
         return self.qsize() <= 0
 
-    def needs_refill(self) -> bool:
-        """True when step-based trigger fires or queue exhausted.
-
-        Triggers inference every ``inference_step_interval`` consumed steps,
-        covering the inference latency window before the queue runs dry.
-        """
-        with self.lock:
-            if self.queue is None:
-                return True
-            if self.last_index >= len(self.queue):
-                return True
-            return self.last_index >= self.inference_step_interval
-
     def get_left_over(self) -> Tensor | None:
         """Unexecuted tail for RTC guidance (prev_chunk_left_over).
 
@@ -107,27 +89,20 @@ class ActionQueue:
     def merge(self, actions: Tensor, execution_horizon: int):
         """Replace queue with new chunk, blending overlap region.
 
-        Phases:
-          1. Drop already-executed prefix (``self.last_index`` steps)
-          2. Crossfade old queue tail with new chunk prefix
-          3. Truncate to ``queue_size``
+        调用方负责在传入前截断已执行前缀（wait_steps），merge 仅做 crossfade
+        和队列替换，不再内部截断。
 
         Args:
-            actions: New action chunk [T, A].
-            execution_horizon: Blend overlap steps (= cfg.execution_horizon).
+            actions: 已截断的新 action chunk [T', A]。
+            execution_horizon: Blend overlap steps (= cfg.execution_horizon)。
         """
         with self.lock:
-            delay = self.last_index  # actual consumed steps since last merge
-
-            # Drop already-executed prefix
-            clamped = max(0, min(delay, len(actions)))
-            new_queue = actions[clamped:].clone()
+            new_queue = actions.clone()
 
             # Overlap blending: crossfade old tail with new chunk prefix
-            blend_n = execution_horizon
-            if blend_n > 0 and self.queue is not None and self.last_index < len(self.queue):
+            if execution_horizon > 0 and self.queue is not None and self.last_index < len(self.queue):
                 old_tail = self.queue[self.last_index :].clone()
-                overlap = min(len(old_tail), len(new_queue), blend_n)
+                overlap = min(len(old_tail), len(new_queue), execution_horizon)
                 if overlap > 0:
                     w_old = torch.linspace(1.0, 0.0, overlap, device=new_queue.device)
                     w_new = 1.0 - w_old
@@ -135,12 +110,7 @@ class ActionQueue:
                         w_old.unsqueeze(-1) * old_tail[:overlap]
                         + w_new.unsqueeze(-1) * new_queue[:overlap]
                     )
-                    logger.debug(
-                        "RTC blend — overlap=%d delay=%d clamped=%d q_shape=%s",
-                        overlap, delay, clamped, new_queue.shape,
-                    )
 
-            # Fixed-size: truncate if needed (excess from faster-than-expected inference)
             if len(new_queue) > self.queue_size:
                 new_queue = new_queue[:self.queue_size]
 
