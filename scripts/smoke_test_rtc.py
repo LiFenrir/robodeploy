@@ -138,9 +138,7 @@ def load_dataset(dataset_path: str, max_episodes: int):
 # ---------------------------------------------------------------------------
 # 图像预处理（匹配 OpenPIPolicyClient.infer）
 # ---------------------------------------------------------------------------
-def preprocess_images(
-    images: dict[str, np.ndarray], bgr_input: bool = False
-) -> dict[str, np.ndarray]:
+def preprocess_images(images: dict[str, np.ndarray], bgr_input: bool = False) -> dict[str, np.ndarray]:
     """图像预处理，精确匹配 OpenPIPolicyClient.infer() 的管线。
 
     BGR(Robot) → RGB → resize 224x224 + pad (PIL) → CHW transpose → float32/255
@@ -239,7 +237,9 @@ def _extract_infer_ms(result: dict) -> float:
 # 工具函数：最近帧查找 + 插值平滑
 # ---------------------------------------------------------------------------
 def build_action_lookup(
-    ds, ep_start: int, ep_end: int,
+    ds,
+    ep_start: int,
+    ep_end: int,
 ) -> list[tuple[int, np.ndarray]]:
     """预建 episode 的 (global_frame_idx, gt_action) 列表，供推理线程做 NN 搜索。"""
     lookup = []
@@ -317,8 +317,7 @@ def _start_inference_thread(
     def _run() -> None:
         rate = 1.0 / inference_rate
         while not shared_state["stop"].is_set():
-            qs = action_queue.qsize()
-            if qs >= rtc_execution_horizon:
+            if not action_queue.needs_refill():
                 time.sleep(0.01)
                 continue
 
@@ -349,7 +348,7 @@ def _start_inference_thread(
                 }
 
                 # RTC kwargs
-                action_index_before = action_queue.get_action_index()
+                action_index_before = action_queue.last_index
                 rtc_kwargs: dict = {}
                 prev_leftover = action_queue.get_left_over()
                 if prev_leftover is not None:
@@ -362,10 +361,8 @@ def _start_inference_thread(
                 if actions is not None and len(actions) > 0:
                     actions_tensor = torch.from_numpy(np.asarray(actions))
                     action_queue.merge(
-                        original_actions=actions_tensor,
-                        processed_actions=actions_tensor,
-                        real_delay=action_index_before,
-                        action_index_before_inference=action_index_before,
+                        actions=actions_tensor,
+                        execution_horizon=rtc_execution_horizon,
                     )
 
                 # 保存结果供主线程记录
@@ -419,10 +416,7 @@ class MetricsCollector:
             return {}
 
         # 推理帧：显式 need_infer 或有非零 infer_ms（多线程 RTC 模式）
-        infer_entries = [
-            e for e in self.entries
-            if e.get("need_infer") or (e.get("infer_ms") or 0) > 0
-        ]
+        infer_entries = [e for e in self.entries if e.get("need_infer") or (e.get("infer_ms") or 0) > 0]
         all_with_mse = [e for e in self.entries if "mse" in e]
 
         s = {
@@ -445,15 +439,11 @@ class MetricsCollector:
             s["max_mse"] = float(np.max([e["mse"] for e in all_with_mse]))
 
             # 按维度统计（仅推理相关帧）
-            infer_with_mse = [
-                e for e in all_with_mse
-                if e.get("need_infer") or (e.get("infer_ms") or 0) > 0
-            ]
+            infer_with_mse = [e for e in all_with_mse if e.get("need_infer") or (e.get("infer_ms") or 0) > 0]
             if infer_with_mse and "per_dim_mse" in infer_with_mse[0]:
                 dim_count = len(infer_with_mse[0]["per_dim_mse"])
                 s["per_dim_avg_mse"] = [
-                    float(np.mean([e["per_dim_mse"][d] for e in infer_with_mse]))
-                    for d in range(dim_count)
+                    float(np.mean([e["per_dim_mse"][d] for e in infer_with_mse])) for d in range(dim_count)
                 ]
 
         # RTC 指标
@@ -496,14 +486,14 @@ class MetricsCollector:
             all_steps = [e["rtc_vs_baseline_per_step_mse"] for e in cmp_entries]
             max_steps = max(len(s) for s in all_steps)
             s["rtc_vs_baseline_avg_per_step"] = [
-                float(np.mean([s[t] for s in all_steps if t < len(s)]))
-                for t in range(max_steps)
+                float(np.mean([s[t] for s in all_steps if t < len(s)])) for t in range(max_steps)
             ]
 
             # RTC 修正幅度（RTC action 与 baseline action 的 L2 距离随时间发散程度）
             s["rtc_smoothing_divergence"] = float(
                 s["rtc_vs_baseline_avg_per_step"][-1] / (s["rtc_vs_baseline_avg_per_step"][0] + 1e-10)
-                if s["rtc_vs_baseline_avg_per_step"][0] > 0 else 0.0
+                if s["rtc_vs_baseline_avg_per_step"][0] > 0
+                else 0.0
             )
 
         return s
@@ -535,9 +525,7 @@ def run_smoke_test(cfg: SmokeTestConfig):
     )
 
     # 检测 camera / state / action keys
-    camera_keys = sorted(
-        [k for k in ds.meta.camera_keys if k.startswith("observation.")]
-    )
+    camera_keys = sorted([k for k in ds.meta.camera_keys if k.startswith("observation.")])
     state_key = "observation.state"
 
     if not camera_keys:
@@ -610,7 +598,9 @@ def run_smoke_test(cfg: SmokeTestConfig):
         if warmup_times:
             logger.info(
                 "预热完成: avg=%.0fms, min=%.0fms, max=%.0fms",
-                np.mean(warmup_times), np.min(warmup_times), np.max(warmup_times),
+                np.mean(warmup_times),
+                np.min(warmup_times),
+                np.max(warmup_times),
             )
 
     # ---- 处理 Episodes ----
@@ -619,8 +609,9 @@ def run_smoke_test(cfg: SmokeTestConfig):
     logger.info("  Episodes: %d, Max frames/ep: %d", cfg.max_episodes, cfg.max_frames_per_episode)
     logger.info("  RTC: %s, Image mode: %s", rtc_enabled, "BGR" if cfg.bgr_input else "RGB")
     if rtc_enabled:
-        logger.info("  Inference rate: %.1f Hz, Smooth max step: %.3f",
-                     cfg.inference_rate, cfg.action_smooth_max_step)
+        logger.info(
+            "  Inference rate: %.1f Hz, Smooth max step: %.3f", cfg.inference_rate, cfg.action_smooth_max_step
+        )
     logger.info("=" * 60)
 
     metrics = MetricsCollector()
@@ -637,9 +628,15 @@ def run_smoke_test(cfg: SmokeTestConfig):
             ep_length = ep_end - ep_start
 
             logger.info("\n" + "=" * 60)
-            logger.info("Episode %d/%d: %d frames (使用 %d), indices [%d, %d)",
-                        i + 1, min(cfg.max_episodes, len(loaded_episodes)),
-                        ep_length, ep_length, ep_start, ep_end)
+            logger.info(
+                "Episode %d/%d: %d frames (使用 %d), indices [%d, %d)",
+                i + 1,
+                min(cfg.max_episodes, len(loaded_episodes)),
+                ep_length,
+                ep_length,
+                ep_start,
+                ep_end,
+            )
             ep_tasks = ds.meta.episodes.get(ep_idx, {}).get("tasks", [])
             ep_task = ep_tasks[0] if ep_tasks else cfg.task
             logger.info("Task: %s", ep_task)
@@ -664,8 +661,8 @@ def run_smoke_test(cfg: SmokeTestConfig):
                 shared_state = {
                     "stop": threading.Event(),
                     "lock": threading.Lock(),
-                    "current_action": None,   # 原始预测动作（closest lookup 用）
-                    "latest_frame": -1,       # 当前回放帧索引（默认观测源）
+                    "current_action": None,  # 原始预测动作（closest lookup 用）
+                    "latest_frame": -1,  # 当前回放帧索引（默认观测源）
                     "inference_ok": True,
                     "last_infer_result": None,
                     "last_infer_obs_idx": -1,
@@ -689,8 +686,11 @@ def run_smoke_test(cfg: SmokeTestConfig):
                     compare_rtc=cfg.compare_rtc,
                     use_closest_lookup=cfg.use_closest_lookup,
                 )
-                logger.info("推理线程已启动 (rate=%.1f Hz, horizon=%d).",
-                             cfg.inference_rate, cfg.rtc_execution_horizon)
+                logger.info(
+                    "推理线程已启动 (rate=%.1f Hz, horizon=%d).",
+                    cfg.inference_rate,
+                    cfg.rtc_execution_horizon,
+                )
 
             # ---- 主消费循环 ----
             for fi in range(ep_length):
@@ -739,9 +739,14 @@ def run_smoke_test(cfg: SmokeTestConfig):
                     except Exception as e:
                         logger.error("Inference 失败 (frame %d): %s", frame_idx, e)
                         metrics.record(
-                            episode=ep_idx, frame=fi, global_frame=int(frame_idx),
-                            need_infer=True, error=str(e),
-                            infer_ms=0.0, roundtrip_ms=0.0, queue_size=queue_size_val,
+                            episode=ep_idx,
+                            frame=fi,
+                            global_frame=int(frame_idx),
+                            need_infer=True,
+                            error=str(e),
+                            infer_ms=0.0,
+                            roundtrip_ms=0.0,
+                            queue_size=queue_size_val,
                         )
                         break
                     rtc_roundtrip_ms = (time.monotonic() - t0) * 1000
@@ -752,7 +757,9 @@ def run_smoke_test(cfg: SmokeTestConfig):
                     ep_rtt_total_ms += rtc_roundtrip_ms
 
                     actions = result.get("actions")
-                    rtc_actions_np = np.asarray(actions) if (actions is not None and len(actions) > 0) else None
+                    rtc_actions_np = (
+                        np.asarray(actions) if (actions is not None and len(actions) > 0) else None
+                    )
                     if rtc_actions_np is not None:
                         chunk = rtc_actions_np
                         chunk_idx = 0
@@ -797,10 +804,9 @@ def run_smoke_test(cfg: SmokeTestConfig):
                             if len(rtc_a) > 0 and len(bl_a) > 0:
                                 cmp_len = min(len(rtc_a), len(bl_a))
                                 diff_chunk = rtc_a[:cmp_len] - bl_a[:cmp_len]
-                                rtc_vs_baseline_mse = round(float(np.mean(diff_chunk ** 2)), 8)
+                                rtc_vs_baseline_mse = round(float(np.mean(diff_chunk**2)), 8)
                                 rtc_vs_baseline_per_step_mse = [
-                                    round(float(np.mean(diff_chunk[t] ** 2)), 8)
-                                    for t in range(cmp_len)
+                                    round(float(np.mean(diff_chunk[t] ** 2)), 8) for t in range(cmp_len)
                                 ]
                             baseline_roundtrip_ms = bl_rtt
                             baseline_infer_ms = _extract_infer_ms(bl_result or {})
@@ -810,7 +816,9 @@ def run_smoke_test(cfg: SmokeTestConfig):
                 if predicted is not None:
                     raw_pred = predicted.copy()
                     predicted = smooth_predicted_action(
-                        prev_action, predicted, cfg.action_smooth_max_step,
+                        prev_action,
+                        predicted,
+                        cfg.action_smooth_max_step,
                     )
                     if not np.array_equal(predicted, raw_pred):
                         smoothed = True
@@ -842,28 +850,32 @@ def run_smoke_test(cfg: SmokeTestConfig):
                 }
 
                 if rtc_vs_baseline_mse is not None:
-                    entry.update({
-                        "baseline_infer_ms": round(float(baseline_infer_ms), 2),
-                        "baseline_roundtrip_ms": round(float(baseline_roundtrip_ms), 2),
-                        "rtc_vs_baseline_mse": rtc_vs_baseline_mse,
-                        "rtc_vs_baseline_per_step_mse": rtc_vs_baseline_per_step_mse,
-                    })
+                    entry.update(
+                        {
+                            "baseline_infer_ms": round(float(baseline_infer_ms), 2),
+                            "baseline_roundtrip_ms": round(float(baseline_roundtrip_ms), 2),
+                            "rtc_vs_baseline_mse": rtc_vs_baseline_mse,
+                            "rtc_vs_baseline_per_step_mse": rtc_vs_baseline_per_step_mse,
+                        }
+                    )
 
                 if predicted is not None and len(gt_action) > 0:
                     min_len = min(len(predicted), len(gt_action))
                     p = predicted[:min_len]
                     g = gt_action[:min_len]
                     diff = p - g
-                    entry.update({
-                        "mse": round(float(np.mean(diff**2)), 8),
-                        "mae": round(float(np.mean(np.abs(diff))), 8),
-                        "per_dim_mse": [round(float(d**2), 8) for d in diff],
-                        "per_dim_diff": [round(float(d), 6) for d in diff],
-                        "pred_mean": round(float(np.mean(p)), 6),
-                        "gt_mean": round(float(np.mean(g)), 6),
-                        "pred_first3": [round(float(x), 6) for x in p[:3]],
-                        "gt_first3": [round(float(x), 6) for x in g[:3]],
-                    })
+                    entry.update(
+                        {
+                            "mse": round(float(np.mean(diff**2)), 8),
+                            "mae": round(float(np.mean(np.abs(diff))), 8),
+                            "per_dim_mse": [round(float(d**2), 8) for d in diff],
+                            "per_dim_diff": [round(float(d), 6) for d in diff],
+                            "pred_mean": round(float(np.mean(p)), 6),
+                            "gt_mean": round(float(np.mean(g)), 6),
+                            "pred_first3": [round(float(x), 6) for x in p[:3]],
+                            "gt_first3": [round(float(x), 6) for x in g[:3]],
+                        }
+                    )
 
                 metrics.record(**entry)
                 log_file.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -903,9 +915,12 @@ def run_smoke_test(cfg: SmokeTestConfig):
                 avg_infer = ep_infer_total_ms / ep_infer_count
                 avg_rtt = ep_rtt_total_ms / ep_infer_count
                 logger.info(
-                    "--- Episode %d 小结: %d frames, %d inferences, "
-                    "avg_infer=%.1fms, avg_rtt=%.1fms ---",
-                    ep_idx, ep_frame_count, ep_infer_count, avg_infer, avg_rtt,
+                    "--- Episode %d 小结: %d frames, %d inferences, avg_infer=%.1fms, avg_rtt=%.1fms ---",
+                    ep_idx,
+                    ep_frame_count,
+                    ep_infer_count,
+                    avg_infer,
+                    avg_rtt,
                 )
 
     # ---- 最终汇总 ----
@@ -939,8 +954,9 @@ def run_smoke_test(cfg: SmokeTestConfig):
     if "avg_queue_size" in summary:
         logger.info("  --- 多线程指标 ---")
         logger.info("  平均队列深度:      %.1f", summary["avg_queue_size"])
-        logger.info("  队列深度范围:      %d - %d",
-                     summary.get("min_queue_size", 0), summary.get("max_queue_size", 0))
+        logger.info(
+            "  队列深度范围:      %d - %d", summary.get("min_queue_size", 0), summary.get("max_queue_size", 0)
+        )
         logger.info("  平滑比例:          %.1f%%", summary.get("pct_smoothed", 0))
         logger.info("  平均查找偏移:      %.1f frames", summary.get("avg_closest_offset", 0))
 
@@ -951,8 +967,9 @@ def run_smoke_test(cfg: SmokeTestConfig):
         logger.info("  最大 chunk MSE:    %.8f", summary["rtc_vs_baseline_max_mse"])
         per_step = summary.get("rtc_vs_baseline_avg_per_step", [])
         if per_step:
-            logger.info("  逐 step MSE:       %s",
-                        ", ".join(f"[t{t}]{v:.6f}" for t, v in enumerate(per_step[:8])))
+            logger.info(
+                "  逐 step MSE:       %s", ", ".join(f"[t{t}]{v:.6f}" for t, v in enumerate(per_step[:8]))
+            )
             if len(per_step) > 8:
                 logger.info("                    ... (%d steps total)", len(per_step))
         div = summary.get("rtc_smoothing_divergence", 0)
@@ -997,15 +1014,21 @@ def main() -> None:
 
     # 数据集
     parser.add_argument(
-        "--dataset_path", type=str, required=True,
+        "--dataset_path",
+        type=str,
+        required=True,
         help="LeRobot 数据集根目录路径",
     )
     parser.add_argument(
-        "--max_episodes", type=int, default=3,
+        "--max_episodes",
+        type=int,
+        default=3,
         help="最大测试 episode 数 (default: 3)",
     )
     parser.add_argument(
-        "--max_frames_per_episode", type=int, default=300,
+        "--max_frames_per_episode",
+        type=int,
+        default=300,
         help="每 episode 最大处理帧数 (default: 300)",
     )
 
@@ -1013,53 +1036,69 @@ def main() -> None:
     parser.add_argument("--host", type=str, default="localhost")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
-        "--task", type=str, default="fold the box",
+        "--task",
+        type=str,
+        default="fold the box",
         help="回退 task prompt，仅当数据集中某 episode 无 task 时使用",
     )
 
     # 图像
     parser.add_argument(
-        "--bgr_input", action="store_true",
+        "--bgr_input",
+        action="store_true",
         help="输入图像是 BGR（OpenCV 格式），默认 RGB（数据集视频）",
     )
 
     # 预热
     parser.add_argument(
-        "--warmup_rounds", type=int, default=10,
+        "--warmup_rounds",
+        type=int,
+        default=10,
         help="首帧预热推理次数，0 表示跳过 (default: 10)",
     )
 
     # RTC
     parser.add_argument(
-        "--no_rtc", action="store_true",
+        "--no_rtc",
+        action="store_true",
         help="禁用 RTC，使用简单 chunk 模式",
     )
     parser.add_argument(
-        "--compare_rtc", action="store_true",
+        "--compare_rtc",
+        action="store_true",
         help="同帧 A/B 对比：每次推理同时发 RTC + baseline 两路请求，量化 RTC 平滑效果",
     )
     parser.add_argument(
-        "--rtc_execution_horizon", type=int, default=10,
+        "--rtc_execution_horizon",
+        type=int,
+        default=10,
         help="RTC execution horizon (default: 10)",
     )
 
     # 多线程推理
     parser.add_argument(
-        "--inference_rate", type=float, default=3.0,
+        "--inference_rate",
+        type=float,
+        default=3.0,
         help="推理线程频率 Hz (default: 3.0)",
     )
     parser.add_argument(
-        "--action_smooth_max_step", type=float, default=0.05,
+        "--action_smooth_max_step",
+        type=float,
+        default=0.05,
         help="单步最大关节位移 rad，0 关闭 (default: 0.05)",
     )
     parser.add_argument(
-        "--use_closest_lookup", action="store_true",
+        "--use_closest_lookup",
+        action="store_true",
         help="推理时用 closest-action 查找观测帧（默认关闭，使用当前回放帧）",
     )
 
     # 输出
     parser.add_argument(
-        "--output_dir", type=str, default="smoke_test_results",
+        "--output_dir",
+        type=str,
+        default="smoke_test_results",
         help="输出目录 (default: smoke_test_results)",
     )
 

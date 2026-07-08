@@ -119,12 +119,18 @@ class RTCProcessor:
         if prev_chunk_left_over.ndim < 3:
             prev_chunk_left_over = prev_chunk_left_over.unsqueeze(0)
 
+        B, T, A = x_t.shape
+        leftover_len = prev_chunk_left_over.shape[1]
+
         if execution_horizon is None:
             execution_horizon = self.rtc_config.execution_horizon
-        if execution_horizon > prev_chunk_left_over.shape[1]:
-            execution_horizon = prev_chunk_left_over.shape[1]
-
-        B, T, A = x_t.shape
+        # 约束窗口: [inference_delay, inference_delay + constraint_len)
+        constraint_len = min(execution_horizon, leftover_len)
+        if constraint_len <= 0:
+            if squeezed:
+                return original_denoise_step_partial(x_t).squeeze(0)
+            return original_denoise_step_partial(x_t)
+        constraint_end = inference_delay + constraint_len
 
         # Align prev_chunk_left_over shape to x_t: pad if smaller, truncate if larger
         pT, pA = prev_chunk_left_over.shape[1], prev_chunk_left_over.shape[2]
@@ -135,7 +141,7 @@ class RTCProcessor:
             prev_chunk_left_over = aligned
 
         weights = (
-            self.get_prefix_weights(inference_delay, execution_horizon, T)
+            self.get_prefix_weights(inference_delay, constraint_end, T)
             .to(x_t.device)
             .unsqueeze(0)
             .unsqueeze(-1)
@@ -170,7 +176,7 @@ class RTCProcessor:
             weights=weights,
             guidance_weight=guidance_weight,
             inference_delay=inference_delay,
-            execution_horizon=execution_horizon,
+            execution_horizon=constraint_len,
         )
 
         return result

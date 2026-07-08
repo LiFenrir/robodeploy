@@ -49,7 +49,7 @@ CAMERA_CONFIG='{"front":{"type":"intelrealsense","serial_number_or_name":"135122
 OUTPUT_DIR="./outputs"
 REPO_ID="bi_s1/bi_s1_$(date +%m%d_%H%M)"
 TASK="Grasp a single layer of the cloth with the gripper, then place the cloth onto the board"
-FPS=30
+FPS=15
 EPISODE_TIME_S=6000                         # 每个 episode 最大时长（秒），超时自动触发保存
 
 # Control（控制模式）— 由终端交互菜单选择，无需手动修改
@@ -57,12 +57,13 @@ EPISODE_TIME_S=6000                         # 每个 episode 最大时长（秒�
 CONTROL_MODE=""                              # 运行时选择: teleop | policy | mixed
 CONTROL_MODE_INITIAL="teleop"                # mixed 模式下的初始控制方式
 
-# RTC（Real-Time Chunking — 服务端时序平滑）
+# RTC（Real-Time Chunking — 服务端约束 + 客户端 blend，收发驱动）
 #------------------------------------------------------------------------------
 USE_RTC=true                                 # true 启用 RTC | false 回退 StreamBuffer
-INFERENCE_RATE=3.0                           # 推理频率（Hz），控制线程轮询间隔
-RTC_EXECUTION_HORIZON=15                     # 约束窗口步数，需 > max(infer_ms/33ms)
+RTC_EXECUTION_HORIZON=13                     # 约束窗口大小（服务端取前 N 步约束，客户端 blend overlap）
+RTC_QUEUE_SIZE=50                            # 固定队列容量 = 每次推理返回的 action 步数
 WARMUP_ROUNDS=10                             # 推理预热轮数，0 跳过
+INFERENCE_RATE=2.0                           # 推理频率（Hz），非 RTC 模式下生效
 
 # Alignment（对齐参数）
 #------------------------------------------------------------------------------
@@ -157,8 +158,8 @@ fi
 RTC_ARGS=()
 if [ "$CONTROL_MODE" != "teleop" ]; then
     if [ "$USE_RTC" = true ]; then
-        RTC_ARGS+=(--use_rtc true)
-        RTC_ARGS+=(--rtc_execution_horizon "$RTC_EXECUTION_HORIZON")
+        RTC_ARGS+=(--use_rtc true --rtc_execution_horizon "$RTC_EXECUTION_HORIZON" --rtc_queue_size "$RTC_QUEUE_SIZE")
+        # RTC 模式改为收发驱动，不再步数触发，已移除 rtc_inference_step_interval
     else
         RTC_ARGS+=(--use_rtc false)
     fi
@@ -213,9 +214,9 @@ print_config() {
     if [ "$CONTROL_MODE" != "teleop" ]; then
         echo "RTC:          $USE_RTC"
         if [ "$USE_RTC" = true ]; then
-            echo "  Horizon:    ${RTC_EXECUTION_HORIZON}   Warmup: ${WARMUP_ROUNDS}"
+            echo "  Horizon:    ${RTC_EXECUTION_HORIZON}   Queue: ${RTC_QUEUE_SIZE}"
+            echo "  收发驱动    Warmup: ${WARMUP_ROUNDS}"
         fi
-        echo "  Inference:  ${INFERENCE_RATE}Hz"
         echo "  ActionSmooth: ${ACTION_SMOOTH_MAX_STEP} rad"
     fi
     echo "Align step:   $ALIGN_MAX_STEP"
@@ -271,7 +272,7 @@ fi
 if [ "$CONTROL_MODE" != "teleop" ]; then
     POLICY_ARGS=(--policy.type "$POLICY_TYPE" --policy.host "$OPENPI_HOST" --policy.port "$OPENPI_PORT")
     if [ "$USE_RTC" = true ]; then
-        RTC_ARGS=(--use_rtc true --rtc_execution_horizon "$RTC_EXECUTION_HORIZON")
+        RTC_ARGS=(--use_rtc true --rtc_execution_horizon "$RTC_EXECUTION_HORIZON" --rtc_queue_size "$RTC_QUEUE_SIZE")
     else
         RTC_ARGS=(--use_rtc false)
     fi

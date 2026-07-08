@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """RL training bridge — connects a robodeploy robot to a Training PC for Stage 2 online RL.
 
 This script runs on the **Robot PC** (the machine physically connected to the robot).
@@ -58,14 +71,12 @@ from robodeploy.robots import (  # noqa: F401, E402
     RobotConfig,
     bi_s1_follower,
     make_robot_from_config,
-   
 )
 from robodeploy.teleoperators import (  # noqa: F401, E402
     TeleoperatorConfig,
-    make_teleoperator_from_config,
     bi_s1_leader,
+    make_teleoperator_from_config,
 )
-
 from robodeploy.utils.leader_follower_align import (  # noqa: E402
     interpolate_leader_to_follower,
     reset_to_zero,
@@ -108,9 +119,7 @@ class RLBridgeConfig:
     intervention_key: str = "i"
 
     # Temporal smoothing (StreamActionBuffer)
-    latency_k: int = 2  # drop first k steps of new chunk for latency compensation
     min_smooth_steps: int = 8  # minimum overlap length for linear crossfade
-    inference_rate: float = 7.0  # policy inference frequency (Hz), controls chunk overlap depth
 
     # Control
     fps: int = 30  # robot control frequency
@@ -246,6 +255,7 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
     done = False
     success = False
     chunk_idx = 0
+    prev_executed_steps = 0  # 用于下一轮 integrate 的 real_delay
     episode = 0
 
     # ---- Intervention state ----
@@ -260,9 +270,8 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
     print(f"  Robot: {robot.name}  |  Training PC: {cfg.host}:{cfg.port}")
     print(f"  Task: {cfg.task}  |  Action dim: {cfg.action_dim}")
     print(f"  Chunk length: {cfg.chunk_length}  |  FPS: {cfg.fps}")
-    steps_per_inference = max(1, int(cfg.fps / cfg.inference_rate))
-    print(f"  Smoothing: latency_k={cfg.latency_k}  min_smooth={cfg.min_smooth_steps}  "
-          f"inf_rate={cfg.inference_rate}Hz  →  {steps_per_inference} steps/inference")
+    planned_steps = max(1, cfg.chunk_length - cfg.min_smooth_steps)
+    print(f"  Smoothing: min_smooth={cfg.min_smooth_steps}  planned_steps={planned_steps}")
     print(f"  Controls: s=success  f=fail  {cfg.rl_toggle_key}=toggle RL [{('ON' if rl_active else 'OFF')}]")
     if teleop is not None:
         print(f"  Intervention: '{cfg.intervention_key}'=toggle  |  teleop={teleop.name}")
@@ -285,7 +294,10 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
         while not _stop:
             # ---- Send observation + RL metadata ----
             msg = pack_rl_observation(
-                obs, reward=reward, done=done, success=success,
+                obs,
+                reward=reward,
+                done=done,
+                success=success,
                 intervention=intervention_active,
                 action=actual_action_chunk,
                 rl_active=rl_active,
@@ -297,6 +309,7 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
             if reset_cmd:
                 logger.info("Reset command received — moving arms to zero")
                 action_buffer.clear()
+                prev_executed_steps = 0
                 reset_to_zero(robot, teleop=teleop, action_features=action_features)
                 # 等待机械臂稳定 + 训练端状态同步：发送归零后的观测，确保训练端
                 # 基于当前关节位置生成动作，而非基于 reset 前的旧状态
@@ -341,8 +354,8 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
 
             # ---- Select action source ----
             if intervention_active and teleop is not None:
-                # 连续遥操循环：fps 跟随 leader，每 steps_per_inference 步
-                # 向 Training PC 发送一次数据（inference_rate），避免卡顿
+                # 连续遥操循环：fps 跟随 leader，每 planned_steps 步
+                # 向 Training PC 发送一次数据，避免卡顿
                 teleop_actions: list[np.ndarray] = []
                 done = False
                 success = False
@@ -374,8 +387,7 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                         break
                     elif key == cfg.rl_toggle_key:
                         rl_active = not rl_active
-                        logger.info("RL toggled %s during intervention",
-                                    "ON" if rl_active else "OFF")
+                        logger.info("RL toggled %s during intervention", "ON" if rl_active else "OFF")
                     elif key == cfg.intervention_key:
                         intervention_active = False
                         logger.info("Intervention OFF")
@@ -387,36 +399,46 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                         time.sleep(sleep_t)
 
                     step += 1
-                    if step >= steps_per_inference:
+                    if step >= planned_steps:
                         _obs = _extract_observation(robot)
                         _obs["prompt"] = cfg.task
-                        _chunk = np.stack(teleop_actions[-steps_per_inference:], axis=0)
+                        _chunk = np.stack(teleop_actions[-planned_steps:], axis=0)
                         _msg = pack_rl_observation(
-                            _obs, reward=0.0, done=False, success=False,
-                            intervention=True, action=_chunk, rl_active=rl_active,
+                            _obs,
+                            reward=0.0,
+                            done=False,
+                            success=False,
+                            intervention=True,
+                            action=_chunk,
+                            rl_active=rl_active,
                         )
                         client.infer(_msg)  # 发送数据，忽略返回动作
                         step = 0
 
                 action_buffer.clear()
+                prev_executed_steps = 0
                 actual_action_chunk = None  # 数据已在循环内发送
                 obs = _extract_observation(robot)
                 obs["prompt"] = cfg.task
             else:
                 # Normal mode: use Training PC action chunk
                 chosen = np.asarray(chosen_actions)  # [C, action_dim]
+                actual_action_chunk = None  # Training PC knows what it sent
+
+                # Integrate the new chunk, dropping the steps actually executed
+                # since the previous observation was sent.
                 action_buffer.integrate_new_chunk(
                     chosen,
-                    max_k=cfg.latency_k,
+                    real_delay=prev_executed_steps,
                     min_m=cfg.min_smooth_steps,
                 )
-                actual_action_chunk = None  # Training PC knows what it sent
 
                 # ---- Execute action chunk ----
                 done = False
                 success = False
+                executed_steps = 0
 
-                for k in range(steps_per_inference):
+                for k in range(planned_steps):
                     act_np = action_buffer.pop_next_action()
                     if act_np is None:
                         break
@@ -424,6 +446,7 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
 
                     action_dict = _numpy_to_action_dict(act_np, action_features)
                     robot.send_action(action_dict)
+                    executed_steps += 1
 
                     # Check for human reward / toggle signal
                     key = _check_keypress(extra_keys=cfg.intervention_key + cfg.rl_toggle_key)
@@ -435,6 +458,7 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                         done = True
                         success = False
                         action_buffer.clear()
+                        prev_executed_steps = 0
                         logger.info("FAILURE — episode %d, chunk %d, step %d", episode, chunk_idx, k)
                         break
                     elif key == "s":
@@ -442,21 +466,28 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                         done = True
                         success = True
                         action_buffer.clear()
+                        prev_executed_steps = 0
                         logger.info("SUCCESS — episode %d (reward=%.3f)", episode, reward)
                         break
                     elif key == cfg.rl_toggle_key:
                         rl_active = not rl_active
-                        logger.info("RL toggled %s (chunk %d, step %d)",
-                                    "ON" if rl_active else "OFF", chunk_idx, k)
+                        logger.info(
+                            "RL toggled %s (chunk %d, step %d)", "ON" if rl_active else "OFF", chunk_idx, k
+                        )
                     elif key == cfg.intervention_key and teleop is not None:
                         action_buffer.clear()
+                        prev_executed_steps = 0
                         # Align leader to follower before takeover to avoid joint jumps
                         logger.info("Aligning leader to follower before intervention...")
                         leader_pos = teleop.get_action()
                         follower_pos = robot.get_observation()
                         interpolate_leader_to_follower(
-                            teleop, leader_pos, follower_pos,
-                            action_features, dt=0.05, max_step=0.02,
+                            teleop,
+                            leader_pos,
+                            follower_pos,
+                            action_features,
+                            dt=0.05,
+                            max_step=0.02,
                         )
                         intervention_active = True
                         logger.info("Intervention ON — teleoperator takeover")
@@ -467,6 +498,8 @@ def run_bridge(cfg: RLBridgeConfig) -> None:
                     sleep_t = control_period - elapsed
                     if sleep_t > 0:
                         time.sleep(sleep_t)
+
+                prev_executed_steps = executed_steps
 
             if _stop:
                 break

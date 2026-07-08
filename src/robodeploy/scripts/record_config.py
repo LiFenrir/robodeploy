@@ -71,15 +71,13 @@ class RecordConfig:
     fps: int = 30
     episode_time_s: float = 120.0
 
-    # Temporal smoothing (ignored when use_rtc=True)
+    # Temporal smoothing (min_smooth_steps is used only when use_temporal_smoothing=True)
     use_temporal_smoothing: bool = True
-    inference_rate: float = 3.0
-    latency_k: int = 8
     min_smooth_steps: int = 8
 
     # RTC (Real-Time Chunking) — replaces temporal smoothing when enabled
     use_rtc: bool = False
-    rtc_execution_horizon: int = 10
+    rtc_execution_horizon: int = 13  # guidance constraint window + client blend overlap
 
     # Warmup
     warmup_rounds: int = 10  # 推理预热轮数，0 跳过
