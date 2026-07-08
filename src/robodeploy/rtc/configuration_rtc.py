@@ -32,10 +32,10 @@ class RTCConfig:
 
     enabled: bool = False  # Default OFF — zero impact on existing training/inference
 
-    # Core RTC settings
+    # RTC guidance constraint window (= client-side blend overlap)
+    execution_horizon: int = 10
     prefix_attention_schedule: RTCAttentionSchedule = RTCAttentionSchedule.LINEAR
     max_guidance_weight: float = 10.0
-    execution_horizon: int = 10
 
     # Debug settings
     debug: bool = False
@@ -44,10 +44,6 @@ class RTCConfig:
     def __post_init__(self):
         """Validate RTC configuration parameters."""
         if self.max_guidance_weight <= 0:
-            raise ValueError(
-                f"max_guidance_weight must be positive, got {self.max_guidance_weight}"
-            )
+            raise ValueError(f"max_guidance_weight must be positive, got {self.max_guidance_weight}")
         if self.debug_maxlen <= 0:
-            raise ValueError(
-                f"debug_maxlen must be positive, got {self.debug_maxlen}"
-            )
+            raise ValueError(f"debug_maxlen must be positive, got {self.debug_maxlen}")

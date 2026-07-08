@@ -79,7 +79,9 @@ class RecordConfig:
 
     # RTC (Real-Time Chunking) — replaces temporal smoothing when enabled
     use_rtc: bool = False
-    rtc_execution_horizon: int = 10
+    rtc_execution_horizon: int = 13  # guidance constraint window + client blend overlap
+    rtc_queue_size: int = 25  # fixed action queue capacity (= server action_chunk)
+    rtc_inference_step_interval: int = 6  # trigger new inference every N consumed steps
 
     # Warmup
     warmup_rounds: int = 10  # 推理预热轮数，0 跳过
