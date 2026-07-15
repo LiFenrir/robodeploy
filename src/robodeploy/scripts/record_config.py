@@ -73,15 +73,11 @@ class RecordConfig:
 
     # Temporal smoothing (ignored when use_rtc=True)
     use_temporal_smoothing: bool = True
-    inference_rate: float = 3.0
-    latency_k: int = 8
     min_smooth_steps: int = 8
 
     # RTC (Real-Time Chunking) — replaces temporal smoothing when enabled
     use_rtc: bool = False
     rtc_execution_horizon: int = 13  # guidance constraint window + client blend overlap
-    rtc_queue_size: int = 50  # 固定队列容量（= 服务端 action_chunk）
-    # rtc_inference_step_interval 已移除 —— RTC 模式改为收发驱动，不再步数触发
 
     # Warmup
     warmup_rounds: int = 10  # 推理预热轮数，0 跳过
