@@ -46,6 +46,18 @@ def test_real_delay_larger_than_chunk_drops_all():
     assert buffer.pop_next_action() is None
 
 
+def test_real_delay_larger_than_chunk_preserves_existing_buffer():
+    buffer = StreamActionBuffer(state_dim=2)
+    chunk1 = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+    buffer.integrate_new_chunk(chunk1, real_delay=0, min_m=1)
+    chunk2 = np.array([[4.0, 4.0], [5.0, 5.0]])
+    buffer.integrate_new_chunk(chunk2, real_delay=5, min_m=1)
+    np.testing.assert_array_equal(buffer.pop_next_action(), [1.0, 1.0])
+    np.testing.assert_array_equal(buffer.pop_next_action(), [2.0, 2.0])
+    np.testing.assert_array_equal(buffer.pop_next_action(), [3.0, 3.0])
+    assert buffer.pop_next_action() is None
+
+
 def test_crossfade_preserves_overlap():
     buffer = StreamActionBuffer(state_dim=1)
     # First chunk: 0, 10

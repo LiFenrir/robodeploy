@@ -198,6 +198,7 @@ def _start_inference_thread(
                 except Exception as e:
                     logger.warning(f"Inference error: {e}")
                     state_ref["inference_ok"] = False
+                    time.sleep(0.1)
                 continue
 
             # RTC mode: request-response cycle, one packet in flight
@@ -236,6 +237,7 @@ def _start_inference_thread(
             except Exception as e:
                 logger.warning(f"Inference error: {e}")
                 state_ref["inference_ok"] = False
+                time.sleep(0.1)
 
     th = threading.Thread(target=_run, daemon=True)
     th.start()

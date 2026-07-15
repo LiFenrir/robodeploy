@@ -42,7 +42,7 @@ class RecordBodyTeachingConfig:
     fps: int = 30
     episode_time_s: float = 120.0
 
-    # Temporal smoothing (ignored when use_rtc=True)
+    # Temporal smoothing (min_smooth_steps is used only when use_temporal_smoothing=True)
     use_temporal_smoothing: bool = True
     min_smooth_steps: int = 8
 

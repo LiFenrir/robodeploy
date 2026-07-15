@@ -192,6 +192,7 @@ def _start_inference_thread(
                 except Exception as e:
                     logger.warning(f"Inference error: {e}")
                     state_ref["inference_ok"] = False
+                    time.sleep(0.1)
                 continue
 
             # RTC mode: request-response cycle, one packet in flight
@@ -232,6 +233,7 @@ def _start_inference_thread(
             except Exception as e:
                 logger.warning(f"Inference error: {e}")
                 state_ref["inference_ok"] = False
+                time.sleep(0.1)
 
     th = threading.Thread(target=_run, daemon=True)
     th.start()
@@ -586,20 +588,16 @@ def run_record(cfg) -> None:
 
     def _handle_toggle_record():
         recording_ref["recording"] = not recording_ref["recording"]
+        if stream_buffer:
+            stream_buffer.clear()
+        if action_queue:
+            action_queue.clear()
         if recording_ref["recording"]:
-            if stream_buffer:
-                stream_buffer.clear()
-            if action_queue:
-                action_queue.clear()
             print(f"[Recording] ON  (episode {recording_ref['episode']})")
             if webui is not None:
                 webui.on_recording_started()
         else:
             print("[Recording] OFF")
-            if action_queue:
-                action_queue.clear()
-            if stream_buffer:
-                stream_buffer.clear()
             if webui is not None:
                 webui.on_recording_stopped()
 

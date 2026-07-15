@@ -67,6 +67,8 @@ class StreamActionBuffer:
             min_m = max(1, int(min_m))
             drop_n = min(real_delay, len(actions_chunk))
             new_chunk = [a.copy() for a in actions_chunk[drop_n:]]
+            if len(new_chunk) == 0:
+                return
 
             if len(self.cur_chunk) == 0 and self.last_action is not None:
                 old_list = [np.asarray(self.last_action, dtype=float).copy() for _ in range(min_m)]
