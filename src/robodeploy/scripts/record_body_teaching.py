@@ -46,6 +46,7 @@ except ImportError:
     _termios = None  # type: ignore[assignment]
     _tty = None  # type: ignore[assignment]
 
+import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -72,9 +73,18 @@ from robodeploy.robots.arx_x5 import arx_x5, bi_arx_x5  # noqa: F401, E402
 from robodeploy.robots.lerobot_robot_my_arm import bi_innov_arm_v1, innov_arm_v1  # noqa: F401, E402
 from robodeploy.scripts.record_config_body_teaching import RecordBodyTeachingConfig  # noqa: E402
 from robodeploy.utils.keyboard_control import get_keypress, prompt_success_failure  # noqa: E402
-from robodeploy.utils.leader_follower_align import reset_to_zero  # noqa: E402
+from robodeploy.utils.leader_follower_align import reset_to_zero, smooth_inference_action  # noqa: E402
 from robodeploy.utils.stream_buffer import StreamActionBuffer  # noqa: E402
 from robodeploy.webui.server import WebUIServer  # noqa: E402
+
+try:
+    import torch
+
+    from robodeploy.rtc import ActionQueue, RTCConfig
+except ImportError:
+    torch = None  # type: ignore[assignment]
+    ActionQueue = None  # type: ignore[assignment]
+    RTCConfig = None  # type: ignore[assignment]
 
 
 class ControlMode(Enum):
@@ -84,8 +94,24 @@ class ControlMode(Enum):
 
 
 # ==============================================================================
+# 图像拼接
+# ==============================================================================
+
+
+def _stack_front_cameras(images: dict) -> dict:
+    """上下拼接 front + front_1，原地修改。"""
+    if "front" in images and "front_1" in images:
+        front = np.asarray(images["front"])
+        front_1 = np.asarray(images["front_1"])
+        images["front"] = np.concatenate([front, front_1], axis=0)
+        del images["front_1"]
+    return images
+
+
+# ==============================================================================
 # Adapter: numpy policy output -> robot action dict
 # ==============================================================================
+
 
 def numpy_to_action_dict(action_np: np.ndarray, action_features: dict[str, type]) -> dict[str, float]:
     """Convert policy output [D] numpy array to robot.send_action() dict format."""
@@ -99,32 +125,77 @@ def numpy_to_action_dict(action_np: np.ndarray, action_features: dict[str, type]
 # Inference thread
 # ==============================================================================
 
+
 def _start_inference_thread(
     policy,
-    buffer: StreamActionBuffer,
+    buffer: StreamActionBuffer | None,
     state_ref: dict,
     recording_ref: dict,
     action_features: dict[str, type],
     camera_names: list[str],
     task: str,
-    inference_rate: float,
-    latency_k: int,
     min_smooth_steps: int,
+    action_queue: "ActionQueue | None" = None,
+    rtc_execution_horizon: int = 10,
 ) -> threading.Thread:
-    """Start a daemon thread for async policy inference."""
+    """异步推理线程。
+
+    RTC 模式：收发驱动 —— 收到推理结果后立即发送新观测，通道中仅一个请求。
+    Smoothing 模式：同 RTC 的 request-response 驱动，实际延迟由 buffer 执行步数计算。
+    """
 
     def _run() -> None:
-        rate = 1.0 / inference_rate
+        was_recording = False
+        _run.prev_wait_steps = 0  # 首轮 inference_delay 用 0
         while not state_ref["stop"]:
             if state_ref["mode"] != ControlMode.POLICY:
+                was_recording = False
                 time.sleep(0.1)
                 continue
 
             is_recording = recording_ref.get("recording", False)
             if not is_recording:
+                if was_recording:
+                    if buffer is not None:
+                        buffer.clear()
+                    if action_queue is not None:
+                        action_queue.clear()
+                was_recording = False
                 time.sleep(0.1)
                 continue
 
+            # Smoothing mode: request-response driver, same as RTC
+            if action_queue is None:
+                was_recording = True
+                obs = state_ref.get("obs")
+                if obs is None:
+                    time.sleep(0.1)
+                    continue
+
+                try:
+                    state = np.array([obs.get(k, 0.0) for k in action_features], dtype=np.float64)
+                    images = {cam: np.asarray(obs[cam]) for cam in camera_names if cam in obs}
+                    _stack_front_cameras(images)
+
+                    if buffer is not None:
+                        send_index = buffer.get_action_index()
+                        result = policy.infer(images, state, task)
+                        actions = result.get("actions", None)
+                        if actions is not None and len(actions) > 0:
+                            wait_steps = buffer.get_action_index() - send_index
+                            buffer.integrate_new_chunk(
+                                np.asarray(actions),
+                                real_delay=wait_steps,
+                                min_m=min_smooth_steps,
+                            )
+                    state_ref["inference_ok"] = True
+                except Exception as e:
+                    logger.warning(f"Inference error: {e}")
+                    state_ref["inference_ok"] = False
+                continue
+
+            # RTC mode: request-response cycle, one packet in flight
+            was_recording = True
             obs = state_ref.get("obs")
             if obs is None:
                 time.sleep(0.1)
@@ -133,18 +204,34 @@ def _start_inference_thread(
             try:
                 state = np.array([obs.get(k, 0.0) for k in action_features], dtype=np.float64)
                 images = {cam: np.asarray(obs[cam]) for cam in camera_names if cam in obs}
+                _stack_front_cameras(images)
 
-                result = policy.infer(images, state, task)
+                send_index = action_queue.get_action_index()
+                prev_leftover = action_queue.get_left_over()
+
+                rtc_kwargs = {}
+                if prev_leftover is not None:
+                    rtc_kwargs["prev_chunk_left_over"] = prev_leftover.cpu().numpy()
+                    rtc_kwargs["inference_delay"] = _run.prev_wait_steps
+                    rtc_kwargs["execution_horizon"] = rtc_execution_horizon
+
+                result = policy.infer(images, state, task, **rtc_kwargs)
                 actions = result.get("actions", None)
                 if actions is not None and len(actions) > 0:
-                    buffer.integrate_new_chunk(
-                        np.asarray(actions), max_k=latency_k, min_m=min_smooth_steps,
+                    wait_steps = action_queue.get_action_index() - send_index
+                    _run.prev_wait_steps = wait_steps
+                    actions_tensor = torch.from_numpy(np.asarray(actions))
+                    action_queue.merge(
+                        original_actions=actions_tensor,
+                        processed_actions=actions_tensor,
+                        real_delay=wait_steps,
+                        action_index_before_inference=send_index,
                     )
+
                 state_ref["inference_ok"] = True
             except Exception as e:
                 logger.warning(f"Inference error: {e}")
                 state_ref["inference_ok"] = False
-            time.sleep(rate)
 
     th = threading.Thread(target=_run, daemon=True)
     th.start()
@@ -154,6 +241,7 @@ def _start_inference_thread(
 # ==============================================================================
 # Main record loop
 # ==============================================================================
+
 
 def record_loop(
     robot,
@@ -169,19 +257,28 @@ def record_loop(
     task: str,
     on_key: callable = None,
     process_pending: callable = None,
+    action_queue: "ActionQueue | None" = None,
+    action_smooth_max_step: float = 0.0,
 ) -> None:
     """Main control loop for body-teaching robots with NPY dataset storage."""
     start_episode_t = time.perf_counter()
     timestamp = 0.0
+    was_recording = recording_ref.get("recording", False)
+    prev_infer_action: dict | None = None
+    was_policy = False
 
     while timestamp < control_time_s and not stop_ref["stop"]:
         start_loop_t = time.perf_counter()
 
         is_recording = recording_ref.get("recording", False)
-        if is_recording and _dataset_buffer_size(dataset) == 0:
+        if is_recording and not was_recording:
             start_episode_t = time.perf_counter()
+            timestamp = 0.0
+            prev_infer_action = None
         elif not is_recording:
-            start_episode_t = time.perf_counter()  # keep timestamp near 0 while idle
+            start_episode_t = time.perf_counter()
+            timestamp = 0.0
+        was_recording = is_recording
 
         observation = robot.get_observation()
         with obs_lock:
@@ -201,8 +298,19 @@ def record_loop(
 
         is_inference = 0
         action = None
-        if state_ref["mode"] == ControlMode.POLICY and stream_buffer is not None:
-            act_np = stream_buffer.pop_next_action()
+        is_policy = state_ref["mode"] == ControlMode.POLICY
+        if is_policy and not was_policy:
+            prev_infer_action = None
+        was_policy = is_policy
+
+        if is_policy:
+            if action_queue is not None:
+                act_tensor = action_queue.get()
+                act_np = act_tensor.cpu().numpy() if act_tensor is not None else None
+            elif stream_buffer is not None:
+                act_np = stream_buffer.pop_next_action()
+            else:
+                act_np = None
             if act_np is not None:
                 action = numpy_to_action_dict(act_np, action_features)
                 is_inference = 1
@@ -212,7 +320,16 @@ def record_loop(
 
         if action is not None:
             if is_inference:
+                if prev_infer_action is not None and action_smooth_max_step > 0:
+                    smooth_inference_action(
+                        robot,
+                        prev_infer_action,
+                        action,
+                        action_features,
+                        max_step=action_smooth_max_step,
+                    )
                 sent_action = robot.send_action(action)
+                prev_infer_action = action
             else:
                 # Collect mode: arm is in gravity compensation, human moves it.
                 # Don't send_action — it would fight the human.
@@ -238,12 +355,15 @@ def record_loop(
             switch_hint = "P=switch " if state_ref["control_mode"] == ControlMode.MIXED else ""
             inf_ok = " ERR!" if not state_ref.get("inference_ok", True) else ""
             ep = recording_ref.get("episode", 0)
-            print(f"[{mode_str}{inf_ok}] ep={ep} frames={fc} elapsed={fc / fps:.1f}s | {switch_hint}R=rec S=save Esc=quit")
+            print(
+                f"[{mode_str}{inf_ok}] ep={ep} frames={fc} elapsed={fc / fps:.1f}s | {switch_hint}R=rec S=save Esc=quit"
+            )
 
 
 # ==============================================================================
 # Main entry
 # ==============================================================================
+
 
 def _dataset_buffer_size(dataset: LeRobotDatasetNPY) -> int:
     if dataset.episode_buffer is None:
@@ -350,14 +470,74 @@ def run_record(cfg) -> None:
     pending_ref = {"cmd": None, "data": None}
     obs_lock = threading.Lock()
 
-    # Stream buffer
-    stream_buffer = StreamActionBuffer(
-        state_dim=len(action_features)
-    ) if (cfg.use_temporal_smoothing and control_mode != ControlMode.COLLECT) else None
+    # Stream buffer / ActionQueue — 互斥
+    stream_buffer = None
+    action_queue = None
+    if control_mode != ControlMode.COLLECT:
+        if cfg.use_rtc:
+            if ActionQueue is None:
+                logger.error(
+                    "RTC requested but robodeploy.rtc failed to import. Falling back to temporal smoothing."
+                )
+                stream_buffer = StreamActionBuffer(state_dim=len(action_features))
+            else:
+                rtc_cfg = RTCConfig(
+                    enabled=True,
+                    execution_horizon=cfg.rtc_execution_horizon,
+                )
+                action_queue = ActionQueue(cfg=rtc_cfg)
+                logger.info("RTC mode enabled (ActionQueue), temporal smoothing disabled.")
+        elif cfg.use_temporal_smoothing:
+            stream_buffer = StreamActionBuffer(state_dim=len(action_features))
+
+    # ---- 推理预热 ----
+    if cfg.warmup_rounds > 0 and policy is not None and policy.connected:
+        logger.info("=" * 60)
+        logger.info("推理预热 (%d rounds), 每轮刷新观测...", cfg.warmup_rounds)
+
+        warmup_dir = "/tmp/warmup_images"
+        _os.makedirs(warmup_dir, exist_ok=True)
+
+        warmup_times = []
+        for w in range(cfg.warmup_rounds):
+            obs = robot.get_observation()
+            warmup_state = np.array([obs.get(k, 0.0) for k in action_features], dtype=np.float64)
+            warmup_images = {cam: np.asarray(obs[cam]) for cam in camera_names if cam in obs}
+            _stack_front_cameras(warmup_images)
+
+            # 每轮保存图片
+            for cam_name, img in warmup_images.items():
+                img_bgr = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+                path = _os.path.join(warmup_dir, f"r{w:02d}_{cam_name}.jpg")
+                cv2.imwrite(path, img_bgr)
+
+            # 每轮打印关节数据
+            logger.info("  预热 %2d/%d 关节:", w + 1, cfg.warmup_rounds)
+            for i, key in enumerate(action_features):
+                logger.info("    [%2d] %-30s = % .6f", i, key, warmup_state[i])
+
+            t0 = time.monotonic()
+            try:
+                policy.infer(warmup_images, warmup_state, cfg.task)
+                elapsed = (time.monotonic() - t0) * 1000
+                warmup_times.append(elapsed)
+                logger.info("  预热 %2d/%d 推理耗时: %.0fms", w + 1, cfg.warmup_rounds, elapsed)
+            except Exception as e:
+                logger.warning("  预热 %2d/%d 失败: %s", w + 1, cfg.warmup_rounds, e)
+
+        logger.info("预热图片已保存到 %s", warmup_dir)
+        if warmup_times:
+            logger.info(
+                "预热完成: avg=%.0fms, min=%.0fms, max=%.0fms",
+                np.mean(warmup_times),
+                np.min(warmup_times),
+                np.max(warmup_times),
+            )
 
     # Start inference thread
     inference_thread = None
-    if stream_buffer is not None and policy is not None and policy.connected:
+    need_inference = policy is not None and policy.connected
+    if need_inference and (stream_buffer is not None or action_queue is not None):
         inference_thread = _start_inference_thread(
             policy=policy,
             buffer=stream_buffer,
@@ -366,9 +546,9 @@ def run_record(cfg) -> None:
             action_features=action_features,
             camera_names=camera_names,
             task=cfg.task,
-            inference_rate=cfg.inference_rate,
-            latency_k=cfg.latency_k,
             min_smooth_steps=cfg.min_smooth_steps,
+            action_queue=action_queue,
+            rtc_execution_horizon=cfg.rtc_execution_horizon,
         )
 
     # Guard: fail fast if required component is missing
@@ -392,12 +572,16 @@ def run_record(cfg) -> None:
             state_ref["mode"] = ControlMode.COLLECT
             if stream_buffer:
                 stream_buffer.clear()
+            if action_queue:
+                action_queue.clear()
             print("[Mode] COLLECT (gravity compensation ON)")
         else:
             robot.set_mode("control")
             state_ref["mode"] = ControlMode.POLICY
             if stream_buffer:
                 stream_buffer.clear()
+            if action_queue:
+                action_queue.clear()
             print("[Mode] POLICY (position control)")
 
     def _handle_toggle_record():
@@ -405,11 +589,17 @@ def run_record(cfg) -> None:
         if recording_ref["recording"]:
             if stream_buffer:
                 stream_buffer.clear()
+            if action_queue:
+                action_queue.clear()
             print(f"[Recording] ON  (episode {recording_ref['episode']})")
             if webui is not None:
                 webui.on_recording_started()
         else:
             print("[Recording] OFF")
+            if action_queue:
+                action_queue.clear()
+            if stream_buffer:
+                stream_buffer.clear()
             if webui is not None:
                 webui.on_recording_stopped()
 
@@ -418,6 +608,10 @@ def run_record(cfg) -> None:
             was_recording = recording_ref.get("recording", False)
             if was_recording:
                 recording_ref["recording"] = False
+                if action_queue:
+                    action_queue.clear()
+                if stream_buffer:
+                    stream_buffer.clear()
             fc = _dataset_buffer_size(dataset)
             print(f"[Save] Episode {recording_ref['episode']}: {fc} frames")
             if was_recording and webui is not None:
@@ -441,6 +635,8 @@ def run_record(cfg) -> None:
         print("[Reset] Moving arms to zero position...")
         if stream_buffer:
             stream_buffer.clear()
+        if action_queue:
+            action_queue.clear()
         reset_to_zero(robot, None, action_features, max_step=cfg.align_max_step)
         # reset_to_zero leaves the arm in control mode (needed for position
         # commands during zeroing).  Restore the correct hardware mode based
@@ -457,6 +653,7 @@ def run_record(cfg) -> None:
 
     # WebUI server — handlers only set pending_ref; main loop executes them.
     if cfg.webui_port > 0:
+
         def _cmd_switch_mode(_data=None):
             pending_ref["cmd"] = "switch_mode"
             return None
@@ -505,17 +702,17 @@ def run_record(cfg) -> None:
 
     def handle_keypress(k: str):
         try:
-            if k == '\x1b' or k == '\x03':
+            if k == "\x1b" or k == "\x03":
                 print("[Exit]")
                 stop_ref["stop"] = True
-            elif k == 'p' or k == '\t':
+            elif k == "p" or k == "\t":
                 _handle_switch_mode()
-            elif k == 'r':
+            elif k == "r":
                 _handle_toggle_record()
-            elif k == 's':
+            elif k == "s":
                 label = prompt_success_failure()
                 _handle_save(label)
-            elif k == 'z':
+            elif k == "z":
                 _handle_reset_zero()
             # Clear any pending WebUI command since we just handled one via keyboard
             pending_ref["cmd"] = None
@@ -576,6 +773,8 @@ def run_record(cfg) -> None:
                 task=cfg.task,
                 on_key=handle_keypress,
                 process_pending=_process_pending,
+                action_queue=action_queue,
+                action_smooth_max_step=cfg.action_smooth_max_step,
             )
             if recording_ref.get("recording", False) and _dataset_buffer_size(dataset) > 0:
                 recording_ref["recording"] = False

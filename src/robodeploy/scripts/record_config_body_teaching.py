@@ -13,16 +13,16 @@ Example:
         --task="fold the box"
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from robodeploy.robots.arx_x5 import arx_x5, bi_arx_x5  # noqa: F401
-from robodeploy.robots.lerobot_robot_my_arm import innov_arm_v1, bi_innov_arm_v1  # noqa: F401
 from robodeploy.policy_clients import (  # noqa: F401
+    PolicyClientConfig,
     lingbot,
     openpi,
 )
-from robodeploy.policy_clients import PolicyClientConfig
 from robodeploy.robots import RobotConfig
+from robodeploy.robots.arx_x5 import arx_x5, bi_arx_x5  # noqa: F401
+from robodeploy.robots.lerobot_robot_my_arm import bi_innov_arm_v1, innov_arm_v1  # noqa: F401
 
 
 @dataclass
@@ -42,11 +42,15 @@ class RecordBodyTeachingConfig:
     fps: int = 30
     episode_time_s: float = 120.0
 
-    # Temporal smoothing
+    # Temporal smoothing (ignored when use_rtc=True)
     use_temporal_smoothing: bool = True
-    inference_rate: float = 3.0
-    latency_k: int = 8
     min_smooth_steps: int = 8
+
+    # RTC (Real-Time Chunking) — 替代 StreamBuffer，收发驱动
+    use_rtc: bool = False
+    rtc_execution_horizon: int = 13  # 服务端约束窗口 + 客户端 blend overlap
+    warmup_rounds: int = 10  # 推理预热轮数，0 跳过
+    action_smooth_max_step: float = 0.05  # 推理动作单步最大变化(rad)，0 关闭
 
     # Alignment
     align_max_step: float = 0.02
