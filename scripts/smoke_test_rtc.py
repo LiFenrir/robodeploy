@@ -317,7 +317,7 @@ def _start_inference_thread(
     def _run() -> None:
         rate = 1.0 / inference_rate
         while not shared_state["stop"].is_set():
-            if not action_queue.needs_refill():
+            if action_queue.qsize() > rtc_execution_horizon:
                 time.sleep(0.01)
                 continue
 
@@ -348,7 +348,7 @@ def _start_inference_thread(
                 }
 
                 # RTC kwargs
-                action_index_before = action_queue.last_index
+                action_index_before = action_queue.get_action_index()
                 rtc_kwargs: dict = {}
                 prev_leftover = action_queue.get_left_over()
                 if prev_leftover is not None:
@@ -361,8 +361,10 @@ def _start_inference_thread(
                 if actions is not None and len(actions) > 0:
                     actions_tensor = torch.from_numpy(np.asarray(actions))
                     action_queue.merge(
-                        actions=actions_tensor,
-                        execution_horizon=rtc_execution_horizon,
+                        original_actions=actions_tensor,
+                        processed_actions=actions_tensor,
+                        real_delay=0,
+                        action_index_before_inference=action_index_before,
                     )
 
                 # 保存结果供主线程记录
@@ -506,9 +508,9 @@ def run_smoke_test(cfg: SmokeTestConfig):
     """执行冒烟测试。
 
     推理流程与 record_dataset._start_inference_thread 中的 RTC 模式对齐：
-      1. 当 ActionQueue 为空时，发起一次 inference
+      1. 当 ActionQueue 队列不足时，发起一次 inference
       2. 传入 prev_chunk_left_over, inference_delay, execution_horizon
-      3. 收到 action chunk 后调用 action_queue.merge()
+      3. 收到 action chunk 后调用 action_queue.merge(original, processed, delay, index)
       4. 逐帧从 action_queue.get() 消费动作
     """
     from robodeploy.policy_clients.openpi.websocket_client import WebsocketClientPolicy

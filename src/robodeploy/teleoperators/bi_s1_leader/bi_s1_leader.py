@@ -138,6 +138,9 @@ class BiS1Leader(Teleoperator):
         # Read left arm position
         start = time.perf_counter()
         left_pos = self.left_arm.get_pos()
+        left_pos[1] = -left_pos[1]
+        left_pos[3] = -left_pos[3]
+        left_pos[4] = -left_pos[4]
         for i, motor in enumerate(self.MOTOR_NAMES):
             action_dict[f"left_{motor}.pos"] = left_pos[i]
         dt_ms = (time.perf_counter() - start) * 1e3
@@ -146,6 +149,9 @@ class BiS1Leader(Teleoperator):
         # Read right arm position
         start = time.perf_counter()
         right_pos = self.right_arm.get_pos()
+        right_pos[1] = -right_pos[1]
+        right_pos[3] = -right_pos[3]
+        right_pos[4] = -right_pos[4]
         
         for i, motor in enumerate(self.MOTOR_NAMES):
             action_dict[f"right_{motor}.pos"] = right_pos[i]
@@ -169,7 +175,13 @@ class BiS1Leader(Teleoperator):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        
+        left_action = {
+            key.removeprefix("left_"): action[key]
+            for key in action
+            if key.startswith("left_")
+        }
+
+        left_pos = [left_action.get(f"{motor}.pos", 0.0) for motor in self.MOTOR_NAMES]
         right_action = {
             key.removeprefix("right_"): action[key]
             for key in action
@@ -186,10 +198,14 @@ class BiS1Leader(Teleoperator):
         self.right_arm.joint_control_mit(right_joint_pos)
         self.right_arm.control_gripper(right_gripper_pos, 0.3)
 
+        self.left_arm.joint_control_mit(left_joint_pos)
+        self.left_arm.control_gripper(left_gripper_pos, 0.3)
+
         sent_action = {}
         for i, motor in enumerate(self.MOTOR_NAMES):
             sent_action[f"left_{motor}.pos"] = left_pos[i]
             sent_action[f"right_{motor}.pos"] = right_pos[i]
+
 
         return sent_action
 

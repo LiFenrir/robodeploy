@@ -112,6 +112,8 @@ class RTCProcessor:
         if prev_chunk_left_over is None:
             return original_denoise_step_partial(x_t)
 
+        x_t = x_t.clone().detach()
+
         squeezed = False
         if x_t.ndim < 3:
             x_t = x_t.unsqueeze(0)
@@ -120,37 +122,36 @@ class RTCProcessor:
             prev_chunk_left_over = prev_chunk_left_over.unsqueeze(0)
 
         B, T, A = x_t.shape
-        leftover_len = prev_chunk_left_over.shape[1]
 
         if execution_horizon is None:
             execution_horizon = self.rtc_config.execution_horizon
-        # 约束窗口: [inference_delay, inference_delay + constraint_len)
-        constraint_len = min(execution_horizon, leftover_len)
-        if constraint_len <= 0:
-            if squeezed:
-                return original_denoise_step_partial(x_t).squeeze(0)
-            return original_denoise_step_partial(x_t)
-        constraint_end = inference_delay + constraint_len
+        execution_horizon = min(execution_horizon, prev_chunk_left_over.shape[1])
 
-        # Align prev_chunk_left_over shape to x_t: pad if smaller, truncate if larger
-        pT, pA = prev_chunk_left_over.shape[1], prev_chunk_left_over.shape[2]
-        if pT != T or pA != A:
-            aligned = torch.zeros(B, T, A, device=x_t.device)
-            copy_T, copy_A = min(pT, T), min(pA, A)
-            aligned[:, :copy_T, :copy_A] = prev_chunk_left_over[:, :copy_T, :copy_A]
-            prev_chunk_left_over = aligned
+        # Pad prev_chunk_left_over if shorter than x_t
+        if prev_chunk_left_over.shape[1] < T or prev_chunk_left_over.shape[2] < A:
+            padded = torch.zeros(B, T, A, device=x_t.device)
+            padded[:, : prev_chunk_left_over.shape[1], : prev_chunk_left_over.shape[2]] = prev_chunk_left_over
+            prev_chunk_left_over = padded
+
+        assert prev_chunk_left_over.shape == x_t.shape, (
+            "The padded previous chunk must be the same size as the input tensor"
+        )
 
         weights = (
-            self.get_prefix_weights(inference_delay, constraint_end, T)
+            self.get_prefix_weights(inference_delay, execution_horizon, T)
             .to(x_t.device)
             .unsqueeze(0)
             .unsqueeze(-1)
         )
 
-        v_t = original_denoise_step_partial(x_t)
-        x1_t = x_t - time * v_t  # denoised prediction (v_t detached, so ∂x1_t/∂x_t = I)
-        err = (prev_chunk_left_over - x1_t) * weights
-        correction = err  # gradient is identity since v_t has no grad graph
+        with torch.enable_grad():
+            v_t = original_denoise_step_partial(x_t)
+            x_t.requires_grad_(True)
+
+            x1_t = x_t - time * v_t
+            err = (prev_chunk_left_over - x1_t) * weights
+            grad_outputs = err.clone().detach()
+            correction = torch.autograd.grad(x1_t, x_t, grad_outputs, retain_graph=False)[0]
 
         max_guidance_weight = torch.as_tensor(self.rtc_config.max_guidance_weight)
         tau_tensor = torch.as_tensor(tau)
@@ -176,7 +177,7 @@ class RTCProcessor:
             weights=weights,
             guidance_weight=guidance_weight,
             inference_delay=inference_delay,
-            execution_horizon=constraint_len,
+            execution_horizon=execution_horizon,
         )
 
         return result
@@ -186,9 +187,7 @@ class RTCProcessor:
     # ------------------------------------------------------------------
 
     def get_prefix_weights(self, start, end, total):
-        if start > end:
-            logger.warning("get_prefix_weights: start=%d > end=%d, clamping start to end", start, end)
-            start = end
+        start = min(start, end)
         schedule = self.rtc_config.prefix_attention_schedule
 
         if schedule == RTCAttentionSchedule.ZEROS:
