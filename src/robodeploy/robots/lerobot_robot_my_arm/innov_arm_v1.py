@@ -11,7 +11,7 @@ from .config_innov_arm import InnovArmV1Config
 
 logger = logging.getLogger(__name__)
 
-MOTOR_NAMES = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6", "gripper"]
+MOTOR_NAMES = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"]
 
 
 class InnovArmV1Robot(Robot):
@@ -141,14 +141,23 @@ class InnovArmV1Robot(Robot):
     def set_mode(self, mode: str) -> None:
         """Switch between collect (gravity compensation) and control (position control)."""
         if mode == "collect":
+            self.arm.disable()
+            time.sleep(0.1)
             self.arm.type = "Grivity_arm"
             self.arm.set_mit_mode()
+            time.sleep(0.1)
+            self.arm.enable()
+            time.sleep(0.1)
             self.arm.gravity_compensation()
             self.config.mode = "collect"
             logger.info(f"{self} switched to collect mode (gravity compensation).")
         elif mode == "control":
+            self.arm.disable()
+            time.sleep(0.1)
             self.arm.type = "follower"
             self.arm.set_pos_vel_mode()
+            time.sleep(0.1)
+            self.arm.enable()
             self.config.mode = "control"
             logger.info(f"{self} switched to control mode (position control).")
         else:

@@ -451,7 +451,9 @@ class RobotController:
             #print(f"Gravity compensation torques: {formatted_tau}")
             # 关节4（索引3）添加阻尼项：tau = -v × damping_coeff
             #tau[3] -= theta_d[3] * 0  # 阻尼系数0.1，可以根据需要调整
-            tau[2] = tau[2] * 0.9 # joint 3 compensation scale
+            tau[1] = tau[1] * 0.7 # joint 3 compensation scale
+            tau[2] = tau[2] * 0.5
+            tau[3] = tau[3] * 0.7
 
             for i, joint in enumerate(self.joints):
                 if i in self.inverted_axes:

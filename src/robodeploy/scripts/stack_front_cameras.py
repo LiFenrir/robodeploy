@@ -3,7 +3,7 @@
 Pre-process bi_s1 LeRobot dataset: vertically stack observation.images.front
 and observation.images.front_1 into a single front view.
 
-- front_1 is rotated 180 degrees around center before stacking below front.
+- front_1 is rotated 180 degrees around center before stacking below front (skip with --no-rotate).
 - Output dataset has 3 video views (front, left_wrist, right_wrist) instead of 4.
 - Front dimensions become 960x848 (was two 480x848).
 - All other data (parquet, wrist videos, meta) is copied as-is.
@@ -61,8 +61,9 @@ def stack_front_videos(
     front_path: str,
     front1_path: str,
     output_path: str,
+    rotate: bool = True,
 ) -> tuple[int, int]:
-    """Stack front (top) + front_1 rotated 180deg (bottom) via ffmpeg. Returns (new_h, new_w)."""
+    """Stack front (top) + front_1 (bottom) via ffmpeg. Returns (new_h, new_w)."""
     w1, h1, fps = _probe_resolution(front_path)
     w2, h2, _ = _probe_resolution(front1_path)
     if w1 != w2:
@@ -71,12 +72,17 @@ def stack_front_videos(
     new_h = h1 + h2
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
+    if rotate:
+        filter_str = "[1:v]rotate=PI:ow=iw:oh=ih[v1]; [0:v][v1]vstack=inputs=2"
+    else:
+        filter_str = "[0:v][1:v]vstack=inputs=2"
+
     cmd = [
         "ffmpeg", "-y",
         "-i", front_path,
         "-i", front1_path,
         "-filter_complex",
-        f"[1:v]rotate=PI:ow=iw:oh=ih[v1]; [0:v][v1]vstack=inputs=2",
+        filter_str,
         *_get_ffmpeg_video_encode_args(),
         "-pix_fmt", "yuv420p",
         "-r", str(fps),
@@ -119,7 +125,7 @@ def update_info_json(info: dict, stacked_h: int, stacked_w: int) -> dict:
     return info
 
 
-def process_dataset(src_path: str, tgt_path: str) -> None:
+def process_dataset(src_path: str, tgt_path: str, rotate: bool = True) -> None:
     src_root = Path(src_path)
     tgt_root = Path(tgt_path)
 
@@ -132,8 +138,9 @@ def process_dataset(src_path: str, tgt_path: str) -> None:
     stacked_h: int | None = None
     stacked_w: int | None = None
 
+    rot_msg = "rotated 180" if rotate else "no rotation"
     print("=" * 50)
-    print("Front Camera Stacking (front + front_1 rotated 180)")
+    print(f"Front Camera Stacking (front + front_1, {rot_msg})")
     print(f"  Source: {src_root}")
     print(f"  Target: {tgt_root}")
     print("=" * 50)
@@ -160,7 +167,7 @@ def process_dataset(src_path: str, tgt_path: str) -> None:
                 # Stack front + front_1
                 tgt_front_dir = tgt_videos / chunk_dir.name / "observation.images.front"
                 tgt_front = str(tgt_front_dir / f"{ep_name}.mp4")
-                h, w = stack_front_videos(front_src, front1_src, tgt_front)
+                h, w = stack_front_videos(front_src, front1_src, tgt_front, rotate=rotate)
                 if stacked_h is None:
                     stacked_h, stacked_w = h, w
 
@@ -218,9 +225,10 @@ def main():
     )
     parser.add_argument("--src-path", required=True, help="Source dataset path")
     parser.add_argument("--tgt-path", required=True, help="Output dataset path")
+    parser.add_argument("--no-rotate", action="store_true", help="Skip 180-degree rotation of front_1")
     args = parser.parse_args()
 
-    process_dataset(args.src_path, args.tgt_path)
+    process_dataset(args.src_path, args.tgt_path, rotate=not args.no_rotate)
 
 
 if __name__ == "__main__":

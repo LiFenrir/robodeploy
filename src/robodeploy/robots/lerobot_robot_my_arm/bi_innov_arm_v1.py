@@ -7,6 +7,7 @@ import numpy as np
 
 from robodeploy.cameras.utils import make_cameras_from_configs
 from robodeploy.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from .ArmDriver import RobotController
 
 from ..robot import Robot
 from .config_innov_arm import BiInnovArmV1Config
@@ -22,8 +23,6 @@ class BiInnovArmV1Robot(Robot):
     def __init__(self, config: BiInnovArmV1Config):
         super().__init__(config)
         self.config = config
-
-        from .ArmDriver import RobotController
 
         self.left_arm = RobotController(config.left_port, type="bi_innov_arm_v1_left")
         self.right_arm = RobotController(config.right_port, type="bi_innov_arm_v1_right")
@@ -171,19 +170,32 @@ class BiInnovArmV1Robot(Robot):
     def set_mode(self, mode: str) -> None:
         """Switch between collect (gravity compensation) and control (position control)."""
         if mode == "collect":
+            self.left_arm.disable()
+            self.right_arm.disable()
+            time.sleep(0.1)
             self.left_arm.type = "Grivity_arm"
             self.right_arm.type = "Grivity_arm"
             self.left_arm.set_mit_mode()
             self.right_arm.set_mit_mode()
+            time.sleep(0.1)
+            self.left_arm.enable()
+            self.right_arm.enable()
+            time.sleep(0.1)
             self.left_arm.gravity_compensation()
             self.right_arm.gravity_compensation()
             self.config.mode = "collect"
             logger.info(f"{self} switched to collect mode (gravity compensation).")
         elif mode == "control":
+            self.left_arm.disable()
+            self.right_arm.disable()
+            time.sleep(0.1)
             self.left_arm.type = "follower"
             self.right_arm.type = "follower"
             self.left_arm.set_pos_vel_mode()
             self.right_arm.set_pos_vel_mode()
+            time.sleep(0.1)
+            self.left_arm.enable()
+            self.right_arm.enable()
             self.config.mode = "control"
             logger.info(f"{self} switched to control mode (position control).")
         else:
