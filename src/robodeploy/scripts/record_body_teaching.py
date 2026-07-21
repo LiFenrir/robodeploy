@@ -134,6 +134,8 @@ def _start_inference_thread(
     action_features: dict[str, type],
     camera_names: list[str],
     task: str,
+    inference_rate: float,
+    latency_k: int,
     min_smooth_steps: int,
     action_queue: "ActionQueue | None" = None,
     rtc_execution_horizon: int = 10,
@@ -141,10 +143,11 @@ def _start_inference_thread(
     """异步推理线程。
 
     RTC 模式：收发驱动 —— 收到推理结果后立即发送新观测，通道中仅一个请求。
-    Smoothing 模式：同 RTC 的 request-response 驱动，实际延迟由 buffer 执行步数计算。
+    Smoothing 模式：轮询 + 限速（legacy）。
     """
 
     def _run() -> None:
+        rate = 1.0 / inference_rate
         was_recording = False
         _run.prev_wait_steps = 0  # 首轮 inference_delay 用 0
         while not state_ref["stop"]:
@@ -164,7 +167,7 @@ def _start_inference_thread(
                 time.sleep(0.1)
                 continue
 
-            # Smoothing mode: request-response driver, same as RTC
+            # Smoothing mode: rate-limited polling
             if action_queue is None:
                 was_recording = True
                 obs = state_ref.get("obs")
@@ -178,21 +181,19 @@ def _start_inference_thread(
                     _stack_front_cameras(images)
 
                     if buffer is not None:
-                        send_index = buffer.get_action_index()
                         result = policy.infer(images, state, task)
                         actions = result.get("actions", None)
                         if actions is not None and len(actions) > 0:
-                            wait_steps = buffer.get_action_index() - send_index
                             buffer.integrate_new_chunk(
                                 np.asarray(actions),
-                                real_delay=wait_steps,
+                                max_k=latency_k,
                                 min_m=min_smooth_steps,
                             )
                     state_ref["inference_ok"] = True
                 except Exception as e:
                     logger.warning(f"Inference error: {e}")
                     state_ref["inference_ok"] = False
-                    time.sleep(0.1)
+                time.sleep(rate)
                 continue
 
             # RTC mode: request-response cycle, one packet in flight
@@ -333,9 +334,11 @@ def record_loop(
                 sent_action = robot.send_action(action)
                 prev_infer_action = action
             else:
-                # Collect mode: arm is in gravity compensation, human moves it.
-                # Don't send_action — it would fight the human.
-                sent_action = action
+                # Collect mode: refresh gravity compensation for the current pose.
+                # In collect mode the robot ignores the action position values and
+                # only sends computed gravity-compensation torques, so this does
+                # not fight the human.
+                sent_action = robot.send_action(action)
 
             if recording_ref.get("recording", False):
                 obs_frame = build_dataset_frame(dataset.features, observation, "observation")
@@ -548,6 +551,8 @@ def run_record(cfg) -> None:
             action_features=action_features,
             camera_names=camera_names,
             task=cfg.task,
+            inference_rate=cfg.inference_rate,
+            latency_k=cfg.latency_k,
             min_smooth_steps=cfg.min_smooth_steps,
             action_queue=action_queue,
             rtc_execution_horizon=cfg.rtc_execution_horizon,
