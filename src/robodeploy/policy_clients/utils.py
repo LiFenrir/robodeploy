@@ -37,5 +37,10 @@ def make_policy_client_from_config(config: PolicyClientConfig) -> PolicyClient:
         from robodeploy.policy_clients.lingbot import LingbotPolicyClient
 
         return LingbotPolicyClient(config)
+
+    elif config.type == "lerobot_server":
+        from robodeploy.policy_clients.lerobot_server import LeRobotServerPolicyClient
+
+        return LeRobotServerPolicyClient(config)
     else:
         raise ValueError(f"Unknown policy client type: {config.type}")

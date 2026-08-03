@@ -16,6 +16,7 @@ from robodeploy.policy_clients.base import PolicyClient
 from robodeploy.policy_clients.config import PolicyClientConfig
 from robodeploy.policy_clients.utils import make_policy_client_from_config
 from robodeploy.policy_clients.lingbot import LingbotPolicyClient, LingbotPolicyClientConfig
+from robodeploy.policy_clients.lerobot_server import LeRobotServerPolicyClient, LeRobotServerPolicyClientConfig
 
 __all__ = [
     "PolicyClient",
@@ -23,4 +24,6 @@ __all__ = [
     "make_policy_client_from_config",
     "LingbotPolicyClient",
     "LingbotPolicyClientConfig",
+    "LeRobotServerPolicyClient",
+    "LeRobotServerPolicyClientConfig"
 ]

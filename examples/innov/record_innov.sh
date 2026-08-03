@@ -23,25 +23,28 @@ set -e
 ROBOT_TYPE="bi_innov_arm_v1"
 LEFT_PORT="/dev/ttyACM1"
 RIGHT_PORT="/dev/ttyACM0"
-ROBOT_MODE="collect"                          # collect=重力补偿示教  control=位置控制(策略推理时用)
+ROBOT_MODE="control"                          # collect=重力补偿示教  control=位置控制(策略推理时用)
 
 # Policy（策略客户端）
 #------------------------------------------------------------------------------
 POLICY_TYPE="openpi"                         # 策略类型，目前支持 openpi
-OPENPI_HOST="localhost"
+OPENPI_HOST="192.168.200.203"
 OPENPI_PORT=8000
 
 # Cameras（摄像头 — 严格 JSON 格式）
 #------------------------------------------------------------------------------
-CAMERA_CONFIG='{"front":{"type":"intelrealsense","serial_number_or_name":"135122077817","width":848,"height":480,"fps":30},"front_1":{"type":"intelrealsense","serial_number_or_name":"935422072733","width":848,"height":480,"fps":30},"left_wrist":{"type":"intelrealsense","serial_number_or_name":"409122273564","width":640,"height":480,"fps":30},"right_wrist":{"type":"intelrealsense","serial_number_or_name":"409122273228","width":640,"height":480,"fps":30}}'
+CAMERA_CONFIG='{"front":{"type":"intelrealsense","serial_number_or_name":"135122077817","width":848,"height":480,"fps":30},
+                "front_1":{"type":"intelrealsense","serial_number_or_name":"236522071363","width":848,"height":480,"fps":30},
+                "left_wrist":{"type":"intelrealsense","serial_number_or_name":"260522274272","width":640,"height":480,"fps":30},
+                "right_wrist":{"type":"intelrealsense","serial_number_or_name":"260422275543","width":640,"height":480,"fps":30}}'
 
 # Output（数据输出）
 #------------------------------------------------------------------------------
 OUTPUT_DIR="./outputs"
 REPO_ID="innov/innov_$(date +%m%d_%H%M)"
-TASK="${TASK:-pick cloth, load into fabric printer}"
+TASK="${TASK:-Put the water flosser into the box and close the lid}"
 FPS=30
-EPISODE_TIME_S="${EPISODE_TIME_S:-120}"
+EPISODE_TIME_S="${EPISODE_TIME_S:-360}"
 
 # Control（控制模式）— 由终端交互菜单选择，无需手动修改
 #------------------------------------------------------------------------------
@@ -50,7 +53,7 @@ CONTROL_MODE_INITIAL="collect"               # mixed 模式下的初始控制方
 
 # RTC（Real-Time Chunking — 服务端约束 + 客户端 blend，收发驱动）
 #------------------------------------------------------------------------------
-USE_RTC=false                                 # true 启用 RTC | false 回退 StreamBuffer
+USE_RTC=true                                 # true 启用 RTC | false 回退 StreamBuffer
 RTC_EXECUTION_HORIZON=15                     # 约束窗口大小（服务端取前 N 步约束，客户端 blend overlap）
 WARMUP_ROUNDS=10                             # 推理预热轮数，0 跳过
 

@@ -1,8 +1,8 @@
 import time
 import math
-from .DM_CAN import *
+from . DM_CAN import *
 import serial
-from .RobotKinematics import RobotKinematics
+from . RobotKinematics import RobotKinematics
 
 class Matrix3x3:
     def __init__(self, mat=None):
@@ -81,7 +81,7 @@ class InverseDynamics:
         z = np.array([0.0, 0.0, 1.0])
 
         # Massess
-        m = np.array([0.461, 0.770, 0.689, 0.390, 0.327, 0.51]) #最后一个不带夹爪是0.001，带夹爪是0.5
+        m = np.array([0.461, 0.770, 0.689, 0.390, 0.327, 0.55]) #最后一个不带夹爪是0.001，带夹爪是0.5
 
         # Inertia matrices
         I = [
@@ -124,7 +124,7 @@ class InverseDynamics:
             np.array([0.180, 0.012,  0.000]),
             np.array([0.061, 0.0560, 0.000]),
             np.array([0.000, 0.005, 0.001]),
-            np.array([0.000, 0.00, 0.024])    #最后一个不带夹爪是[0.000, 0.00, 0.001]，带夹爪是[0.000, 0.00, 0.034]
+            np.array([0.000, 0.00, 0.034])    #最后一个不带夹爪是[0.000, 0.00, 0.001]，带夹爪是[0.000, 0.00, 0.034]
         ]
 
         # T, R, Rt, p
@@ -446,14 +446,10 @@ class RobotController:
             theta_dd = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
             f_external = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
             tau = InverseDynamics.inv_dyn2(theta, theta_d, theta_dd, f_external)
-                  # 将数组中的每个元素格式化为3位小数
-            formatted_tau = [f"{x:.3f}" for x in tau]
-            #print(f"Gravity compensation torques: {formatted_tau}")
+
             # 关节4（索引3）添加阻尼项：tau = -v × damping_coeff
             #tau[3] -= theta_d[3] * 0  # 阻尼系数0.1，可以根据需要调整
-            tau[1] = tau[1] * 0.7 # joint 3 compensation scale
-            tau[2] = tau[2] * 0.5
-            tau[3] = tau[3] * 0.7
+            tau[3] = tau[3] * 1.2  # 力矩放大1.2倍，增强重力补偿效果，避免关节4下垂过快
 
             for i, joint in enumerate(self.joints):
                 if i in self.inverted_axes:

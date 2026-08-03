@@ -66,6 +66,7 @@ from robodeploy.datasets.utils import (  # noqa: E402
 )
 from robodeploy.policy_clients import (  # noqa: F401, E402
     openpi,
+    lerobot_server,
 )
 from robodeploy.policy_clients.utils import make_policy_client_from_config  # noqa: F401, E402
 from robodeploy.robots import make_robot_from_config  # noqa: F401, E402
@@ -334,10 +335,15 @@ def record_loop(
                 sent_action = robot.send_action(action)
                 prev_infer_action = action
             else:
+<<<<<<< HEAD
                 # Collect mode: refresh gravity compensation for the current pose.
                 # In collect mode the robot ignores the action position values and
                 # only sends computed gravity-compensation torques, so this does
                 # not fight the human.
+=======
+                # Collect mode: arm is in gravity compensation, human moves it.
+                # Don't send_action — it would fight the human.
+>>>>>>> 63b4bf6 (some change)
                 sent_action = robot.send_action(action)
 
             if recording_ref.get("recording", False):
