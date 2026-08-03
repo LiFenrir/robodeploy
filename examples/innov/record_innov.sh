@@ -54,10 +54,13 @@ USE_RTC=false                                 # true 启用 RTC | false 回退 S
 RTC_EXECUTION_HORIZON=15                     # 约束窗口大小（服务端取前 N 步约束，客户端 blend overlap）
 WARMUP_ROUNDS=10                             # 推理预热轮数，0 跳过
 
-# Temporal Smoothing（仅非 RTC 模式生效）
+# Temporal Smoothing（仅非 RTC 模式生效，固定频率轮询 + 线性 crossfade）
+# 400ms 推理 + 30fps 执行 → 每次推理消耗 ~12 步，周期总消耗 ~18 步 (5Hz)
 #------------------------------------------------------------------------------
 USE_TEMPORAL_SMOOTHING=true                 # RTC 启用时自动忽略
-MIN_SMOOTH_STEPS=8
+INFERENCE_RATE=5.0                          # 推理频率 (Hz)，周期 = 400ms推理 + 200ms sleep ≈ 600ms
+LATENCY_K=16                                # 最大延迟补偿步数（覆盖推理+轮询周期消耗）
+MIN_SMOOTH_STEPS=8                          # chunk 重叠区最小平滑步数
 
 # Action Smoothing（推理动作插值平滑，0 关闭）
 #------------------------------------------------------------------------------
@@ -134,7 +137,7 @@ if [ "$CONTROL_MODE" != "collect" ]; then
     else
         RTC_ARGS+=(--use_rtc false)
         if [ "$USE_TEMPORAL_SMOOTHING" = true ]; then
-            RTC_ARGS+=(--use_temporal_smoothing true --min_smooth_steps "$MIN_SMOOTH_STEPS")
+            RTC_ARGS+=(--use_temporal_smoothing true --inference_rate "$INFERENCE_RATE" --latency_k "$LATENCY_K" --min_smooth_steps "$MIN_SMOOTH_STEPS")
         else
             RTC_ARGS+=(--use_temporal_smoothing false)
         fi
@@ -179,7 +182,7 @@ print_config() {
         else
             echo "  Smoothing:  $USE_TEMPORAL_SMOOTHING"
             if [ "$USE_TEMPORAL_SMOOTHING" = true ]; then
-                echo "    min_m=$MIN_SMOOTH_STEPS"
+                echo "    rate=${INFERENCE_RATE}Hz  latency_k=$LATENCY_K  min_m=$MIN_SMOOTH_STEPS"
             fi
         fi
         echo "  ActionSmooth: ${ACTION_SMOOTH_MAX_STEP} rad"
@@ -229,7 +232,7 @@ if [ "$CONTROL_MODE" != "collect" ]; then
     else
         RTC_ARGS=(--use_rtc false)
         if [ "$USE_TEMPORAL_SMOOTHING" = true ]; then
-            RTC_ARGS+=(--use_temporal_smoothing true --min_smooth_steps "$MIN_SMOOTH_STEPS")
+            RTC_ARGS+=(--use_temporal_smoothing true --inference_rate "$INFERENCE_RATE" --latency_k "$LATENCY_K" --min_smooth_steps "$MIN_SMOOTH_STEPS")
         else
             RTC_ARGS+=(--use_temporal_smoothing false)
         fi
