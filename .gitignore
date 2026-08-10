@@ -37,3 +37,6 @@ s1_data*/
 
 #codegraph
 .codegraph
+
+# Project docs (local planning, not versioned)
+docs/
