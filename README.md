@@ -6,7 +6,7 @@ Robotics deployment & data collection toolkit — based on LeRobot, adapted for 
 
 ## Features
 
-- **Multi-robot support** — S1, SO100, SO101, Koch, Aloha, LeKiwi, HopeJr, Stretch3, ViperX
+- **Multi-robot support** — S1 (single/bimanual), Innov Arm, ARX X5
 - **Bimanual teleoperation** — single-arm and dual-arm leader-follower setups
 - **Multi-mode data collection** — teleop, policy inference, mixed (hot-switch with P key)
 - **Camera integration** — OpenCV USB cameras, Intel RealSense depth cameras
@@ -34,6 +34,8 @@ pip install -e ".[dev,test]"           # base + dev/test
 pip install -e ".[feetech]"            # Feetech servo driver
 pip install -e ".[dynamixel]"          # Dynamixel servo driver
 pip install -e ".[intelrealsense]"     # Intel RealSense camera driver
+pip install -e ".[innov]"              # Innov Arm (mujoco renderer)
+pip install -e ".[qt]"                 # Qt desktop UI (PyQt6)
 pip install -e ".[all]"                # everything
 ```
 

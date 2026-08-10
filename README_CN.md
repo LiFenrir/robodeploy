@@ -4,7 +4,7 @@
 
 ## 功能介绍
 
-- **多机器人支持** — S1、SO100、SO101、Koch、Aloha、LeKiwi、HopeJr、Stretch3、ViperX
+- **多机器人支持** — S1（单臂/双臂）、Innov Arm、ARX X5
 - **双臂遥操作** — 支持单臂 / 双臂 leader-follower 遥操作
 - **多模式数据采集** — 纯遥操作、纯策略推理、混合模式（P 键热切换）
 - **摄像头集成** — OpenCV USB 摄像头、Intel RealSense 深度摄像头
@@ -32,6 +32,8 @@ pip install -e ".[dev,test]"           # 基础 + 开发/测试
 pip install -e ".[feetech]"            # Feetech 舵机驱动
 pip install -e ".[dynamixel]"          # Dynamixel 舵机驱动
 pip install -e ".[intelrealsense]"     # Intel RealSense 摄像头驱动
+pip install -e ".[innov]"              # Innov Arm（mujoco 渲染）
+pip install -e ".[qt]"                 # Qt 桌面界面（PyQt6）
 pip install -e ".[all]"                # 全部
 ```
 

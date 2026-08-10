@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Robodeploy is a robotics deployment & data collection toolkit based on LeRobot, adapted for real-world robot control, teleoperation recording, and policy inference. Supports S1, SO100, SO101, Koch, Aloha, LeKiwi, HopeJr, Stretch3, ViperX, and ARX X5 robots.
+Robodeploy is a robotics deployment & data collection toolkit based on LeRobot, adapted for real-world robot control, teleoperation recording, and policy inference. Supports S1 (single/bimanual), Innov Arm, and ARX X5 robots.
 
 ## Build/Run/Test Commands
 
@@ -12,6 +12,7 @@ Robodeploy is a robotics deployment & data collection toolkit based on LeRobot, 
 # Install (base + dev/test)
 pip install -e ".[dev,test]"
 
+# Robot-specific extras: [innov] (mujoco), [feetech], [dynamixel], [intelrealsense], [qt] (PyQt6 UI)
 # Full install with all optional drivers
 pip install -e ".[all]"
 
