@@ -16,12 +16,10 @@ pip install -e ".[dev,test]"
 pip install -e ".[all]"
 
 # Lint & format
-ruff check src/ tests/
-ruff format src/ tests/
+ruff check src/
+ruff format src/
 
-# Run tests (hardware tests auto-skip via conftest.py when no physical motors/cameras are connected)
-pytest
-pytest tests/datasets/ -v          # run a specific test directory
+# Note: tests/ suite has been removed; no pytest commands (dev/test deps kept in pyproject.toml for future use)
 
 # Start WebUI monitoring dashboard
 python -m robodeploy.webui           # defaults to http://localhost:5000
@@ -39,7 +37,7 @@ Three pluggable interfaces connected by `draccus.ChoiceRegistry` (dataclass-base
 
 New robot/teleoperator types are auto-discovered — just place a package under `robots/` or `teleoperators/` with a config class that inherits from the base `*Config`.
 
-### Data recording pipeline (`scripts/record_dataset.py`)
+### Data recording pipeline (`src/robodeploy/scripts/record_dataset.py`)
 
 Main entry point for data collection. The 30fps control loop runs three phases per tick:
 1. `robot.get_obs()` → populate `state_ref["obs"]` and camera images
@@ -62,6 +60,16 @@ Two backends:
 
 FastAPI server in a background thread. Pure WebSocket: JSON for status/commands, binary for video frames. Shares state with the main loop via `state_ref`/`recording_ref`/`stop_ref` dicts and an `obs_lock`.
 
+### Qt UI (`src/robodeploy/qtui/`)
+
+PyQt6 desktop app (extra `[qt]`, entry `robodeploy-qt` / `python -m robodeploy.qtui`). Four tabs: 相机调试 (enumerate/preview/intrinsics export), 数据采集, 数据检查 (browse/replay/validate/scripts/v3.0 export), 部署 (policy connect test + launch).
+
+- `record_dataset.py --front_end=qt` runs the control loop in a worker thread; main thread runs QApplication. Qt reuses the same `pending_ref` command entry as WebUI — `record_loop()` internals are untouched. `QtRecordBridge` mirrors the `WebUIServer` hook interface (`on_recording_started`/`on_episode_saved`/...) and provides blocking `request_label()` for the episode-time-limit save dialog.
+- Threading rule: hardware IO never on the Qt main thread; frames/states cross threads via Signals or 30Hz QTimer polling of `state_ref["obs"]` under `obs_lock` (drop-frame strategy, never blocks the control loop).
+- URDF live view: `UrdfWorker` (mujoco offscreen renderer in a QThread) maps `state_ref` joint values → `mjData.qpos`; config via `urdf_path`/`urdf_joint_indices`/`urdf_joint_scale`. Degrades to numeric joint readout if GL init fails.
+- Dataset replay decodes video via ffmpeg subprocess pipe (`FfmpegVideoReader`, rawvideo RGB24 + `-ss` input seek) — cv2 cannot decode the AV1 recordings.
+- Standalone tabs launch `record_dataset` and dataset maintenance scripts as QProcess subprocesses with live logs; v3.0 export calls lerobot's `convert_dataset_v21_to_v30.py` (path configurable).
+
 ### Offline testing without hardware
 
 When no physical motors/cameras are connected, reuse existing LeRobot-format datasets for offline testing. `conftest.py` auto-detects missing hardware and skips relevant tests.
@@ -73,7 +81,7 @@ When no physical motors/cameras are connected, reuse existing LeRobot-format dat
 - **Google-style docstrings**
 - **Apache 2.0 license header** required on every `.py` file
 - **`src` layout** — all imports use `from robodeploy import ...` or `from robodeploy.xxx import ...`
-- **`scripts/` is standalone** — not part of the Python package, entry points only
+- **`scripts/` is standalone** — hardware-interaction deploy/test tools, not part of the Python package. Data collection & dataset processing scripts live in `src/robodeploy/scripts/` (invoked via `python -m robodeploy.scripts.<module>`)
 - Configuration via **draccus** CLI args: `--robot.type=bi_s1_follower`, `--policy.host=localhost`, etc.
 - `torchcodec` is unavailable on Windows, ARM Linux, and macOS x86_64 — this is expected
 - `[feetech]`, `[dynamixel]`, `[intelrealsense]` are optional extras, not in the base install

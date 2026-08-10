@@ -18,10 +18,9 @@ Robotics deployment & data collection toolkit — based on LeRobot, adapted for 
 
 ```
 robodeploy/
-├── src/robodeploy/         # core package: cameras, datasets, motors, robots, teleoperators, webui
-├── scripts/                   # data collection & inference scripts
+├── src/robodeploy/         # core package: cameras, datasets, motors, robots, teleoperators, webui, scripts
+├── scripts/                   # hardware deploy/test tools (replay, inference check, RTC smoke test)
 ├── deploy/                    # deployment: piper_deploy.py, ROS launch, data_collection
-├── tests/                     # pytest suite
 ├── examples/                  # usage examples
 └── pyproject.toml             # project metadata & dependencies
 ```
@@ -38,18 +37,14 @@ pip install -e ".[intelrealsense]"     # Intel RealSense camera driver
 pip install -e ".[all]"                # everything
 ```
 
-### Run tests
-
-```bash
-pytest                                 # hardware tests auto-skip if unavailable
-```
-
 ### Lint & format
 
 ```bash
-ruff check src/ tests/
-ruff format src/ tests/
+ruff check src/
+ruff format src/
 ```
+
+(The `tests/` suite has been removed; dev/test deps remain in `pyproject.toml` for future use.)
 
 ### Start WebUI
 
@@ -61,7 +56,7 @@ python -m robodeploy.webui           # defaults to http://localhost:5000
 
 ```bash
 # Bimanual S1 — pure teleoperation (NPY storage, O(1) RAM)
-python scripts/record_dataset.py \
+python -m robodeploy.scripts.record_dataset \
     --robot.type=bi_s1_follower \
     --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
     --teleop.type=bi_s1_leader \
@@ -70,7 +65,7 @@ python scripts/record_dataset.py \
     --task="pick and place"
 
 # Mixed mode — policy inference + teleop (P key to toggle)
-python scripts/record_dataset.py \
+python -m robodeploy.scripts.record_dataset \
     --robot.type=bi_s1_follower \
     --teleop.type=bi_s1_leader \
     --policy.type=openpi \
@@ -106,7 +101,7 @@ See [scripts/README.md](scripts/README.md) for details.
 - Hardware tests auto-skip in `conftest.py` when no physical motor/camera is connected
 - `torchcodec` is unavailable on Windows, ARM Linux, and macOS x86_64 — this is expected
 - `[feetech]`, `[dynamixel]`, `[intelrealsense]` are optional extras, not in the base install
-- Top-level `scripts/` is **not** part of the Python package — standalone entry points only
+- Top-level `scripts/` is **not** part of the Python package — standalone hardware deploy/test entry points only. Data collection & dataset processing scripts live in `src/robodeploy/scripts/` (invoked via `python -m robodeploy.scripts.<module>`)
 
 ## License
 

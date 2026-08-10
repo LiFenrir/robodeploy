@@ -16,10 +16,9 @@
 
 ```
 robodeploy/
-├── src/robodeploy/         # 核心包：cameras, datasets, motors, robots, teleoperators, webui
-├── scripts/                   # 数据采集与推理脚本
+├── src/robodeploy/         # 核心包：cameras, datasets, motors, robots, teleoperators, webui, scripts
+├── scripts/                   # 硬件部署/测试工具（回放、推理检查、RTC 冒烟测试）
 ├── deploy/                    # 部署工具：piper_deploy.py, ROS launch, data_collection
-├── tests/                     # pytest 测试套件
 ├── examples/                  # 使用示例
 └── pyproject.toml             # 项目元数据与依赖配置
 ```
@@ -36,18 +35,14 @@ pip install -e ".[intelrealsense]"     # Intel RealSense 摄像头驱动
 pip install -e ".[all]"                # 全部
 ```
 
-### 运行测试
-
-```bash
-pytest                                 # 硬件相关测试会自动跳过
-```
-
 ### 代码检查与格式化
 
 ```bash
-ruff check src/ tests/                 # 代码检查
-ruff format src/ tests/                # 代码格式化
+ruff check src/                        # 代码检查
+ruff format src/                       # 代码格式化
 ```
+
+(测试套件 `tests/` 已移除,不再有 pytest 命令;dev/test 依赖保留在 pyproject.toml 中备用)
 
 ### 启动 Web 界面
 
@@ -59,7 +54,7 @@ python -m robodeploy.webui           # 默认地址 http://localhost:5000
 
 ```bash
 # 双臂 S1 — 纯遥操作（NPY 存储，O(1) 内存）
-python scripts/record_dataset.py \
+python -m robodeploy.scripts.record_dataset \
     --robot.type=bi_s1_follower \
     --robot.left_arm_port=/dev/ttyUSB0 --robot.right_arm_port=/dev/ttyUSB1 \
     --teleop.type=bi_s1_leader \
@@ -68,7 +63,7 @@ python scripts/record_dataset.py \
     --task="pick and place"
 
 # 混合模式 — 策略推理 + 遥操作（P 键切换）
-python scripts/record_dataset.py \
+python -m robodeploy.scripts.record_dataset \
     --robot.type=bi_s1_follower \
     --teleop.type=bi_s1_leader \
     --policy.type=openpi \
@@ -104,7 +99,7 @@ python scripts/record_dataset.py \
 - 硬件测试会自动跳过 — `conftest.py` 检测到未连接物理电机/摄像头时跳过
 - `torchcodec` 在 Windows / ARM Linux / macOS x86_64 上不可用，此为预期行为
 - `[feetech]`、`[dynamixel]`、`[intelrealsense]` 是可选驱动，不在默认安装中
-- 顶层 `scripts/` 不属于 Python 包，是独立的入口脚本
+- 顶层 `scripts/` 不属于 Python 包，是独立的硬件部署/测试入口。数据采集与数据集处理脚本位于 `src/robodeploy/scripts/`（通过 `python -m robodeploy.scripts.<module>` 调用）
 
 ## 开源协议
 
