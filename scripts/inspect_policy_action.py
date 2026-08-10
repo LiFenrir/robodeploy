@@ -50,9 +50,7 @@ from robodeploy.policy_clients import (  # noqa: F401, E402
 from robodeploy.robots import (  # noqa: F401, E402
     RobotConfig,  # noqa: F401, E402
     bi_s1_follower,
-    bi_so100_follower,
     s1_follower,
-    so100_follower,
 )
 
 

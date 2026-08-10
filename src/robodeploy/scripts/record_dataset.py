@@ -34,10 +34,8 @@ from robodeploy.policy_clients import (  # noqa: F401, E402
 )
 from robodeploy.robots import (  # noqa: F401, E402
     bi_s1_follower,
-    bi_so100_follower,
     make_robot_from_config,
     s1_follower,
-    so100_follower,
 )
 from robodeploy.robots.lerobot_robot_my_arm import (  # noqa: F401, E402
     bi_innov_arm_v1,
@@ -45,10 +43,8 @@ from robodeploy.robots.lerobot_robot_my_arm import (  # noqa: F401, E402
 )
 from robodeploy.teleoperators import (  # noqa: F401, E402
     bi_s1_leader,
-    bi_so100_leader,
     make_teleoperator_from_config,
     s1_leader,
-    so100_leader,
 )
 from robodeploy.utils.stream_buffer import StreamActionBuffer  # noqa: F401, E402
 from robodeploy.webui.server import WebUIServer  # noqa: E402
@@ -65,6 +61,12 @@ try:
 except ImportError:
     ActionQueue = None  # type: ignore[assignment]
     RTCConfig = None  # type: ignore[assignment]
+
+try:
+    from robodeploy.qtui.record_frontend import QtRecordBridge, run_qt_session
+except ImportError:
+    QtRecordBridge = None  # type: ignore[assignment]
+    run_qt_session = None  # type: ignore[assignment]
 
 from robodeploy.configs.parser import wrap  # noqa: E402
 from robodeploy.datasets.npy_backend import BackgroundVideoEncoder, LeRobotDatasetNPY  # noqa: E402
@@ -651,7 +653,7 @@ def run_record(cfg) -> None:
         reset_to_zero(robot, teleop, action_features, max_step=cfg.align_max_step)
 
     # WebUI server — handlers only set pending_ref; main loop executes them.
-    if cfg.webui_port > 0:
+    if cfg.webui_port > 0 and cfg.front_end == "web":
 
         def _cmd_switch_mode(_data=None):
             pending_ref["cmd"] = "switch_mode"
@@ -747,17 +749,13 @@ def run_record(cfg) -> None:
     print(f"  Policy: {'Connected' if (policy and policy.connected) else 'N/A'}  |  Output: {cfg.output_dir}")
     print(f"  Task: {cfg.task}")
     print("  Storage: NPY (O(1) RAM)")
-    print(f"  Controls: {switch_hint}R=rec  S=save+label  Z=zero-reset  Esc=exit")
+    print(
+        f"  Front-end: {cfg.front_end}  |  Controls: {switch_hint}R=rec  S=save+label  Z=zero-reset  Esc=exit"
+    )
     print("=" * 60)
-    input("Press [Enter] to start...")
 
-    _old_termios = termios.tcgetattr(_stdin_fd)
-    tty.setcbreak(_stdin_fd)
-
-    print(f"[Control] {state_ref['control_mode'].value.upper()}  [Start] {state_ref['mode'].value.upper()}")
-    print(f"[Recording] OFF  (next episode {recording_ref['episode']})")
-
-    try:
+    def _control_loop_main(on_key, label_prompt) -> None:
+        """主控制循环：record_loop + 剧集超时自动保存。qt 前端时在 worker 线程运行。"""
         while not stop_ref["stop"]:
             record_loop(
                 robot=robot,
@@ -772,7 +770,7 @@ def run_record(cfg) -> None:
                 stop_ref=stop_ref,
                 obs_lock=obs_lock,
                 task=cfg.task,
-                on_key=handle_keypress,
+                on_key=on_key,
                 process_pending=_process_pending,
                 action_queue=action_queue,
                 action_smooth_max_step=cfg.action_smooth_max_step,
@@ -783,7 +781,7 @@ def run_record(cfg) -> None:
                 print(f"[Auto-save] Episode {recording_ref['episode']}: {fc} frames (time limit)")
                 if webui is not None:
                     webui.on_recording_stopped()
-                label = prompt_success_failure()
+                label = label_prompt()
                 if label >= 0:
                     _save_dataset_episode(dataset, label, cfg.task)
                     if webui is not None:
@@ -793,6 +791,42 @@ def run_record(cfg) -> None:
                     _discard_dataset_episode(dataset)
                 pending_ref["cmd"] = None
                 pending_ref["data"] = None
+
+    try:
+        if cfg.front_end == "qt" and run_qt_session is not None and QtRecordBridge is not None:
+            # Qt 前端：主线程跑 QApplication，控制循环移入 worker 线程
+            bridge = QtRecordBridge()
+            webui = bridge  # 复用 on_* 钩子调用点
+            run_qt_session(
+                bridge=bridge,
+                loop_fn=lambda: _control_loop_main(on_key=None, label_prompt=bridge.request_label),
+                state_ref=state_ref,
+                recording_ref=recording_ref,
+                stop_ref=stop_ref,
+                obs_lock=obs_lock,
+                pending_ref=pending_ref,
+                camera_names=camera_names,
+                state_keys=list(action_features.keys()),
+                fps=cfg.fps,
+                deploy_mode=cfg.deploy_mode,
+                urdf_path=cfg.urdf_path,
+                urdf_joint_indices=cfg.urdf_joint_indices,
+                urdf_joint_scale=cfg.urdf_joint_scale,
+            )
+        else:
+            if cfg.front_end == "qt":
+                logger.error("PyQt6 未安装，回退到键盘控制（pip install 'robodeploy[qt]'）")
+            input("Press [Enter] to start...")
+
+            _old_termios = termios.tcgetattr(_stdin_fd)
+            tty.setcbreak(_stdin_fd)
+
+            print(
+                f"[Control] {state_ref['control_mode'].value.upper()}  [Start] {state_ref['mode'].value.upper()}"
+            )
+            print(f"[Recording] OFF  (next episode {recording_ref['episode']})")
+
+            _control_loop_main(on_key=handle_keypress, label_prompt=prompt_success_failure)
     except KeyboardInterrupt:
         print("[Interrupted]")
     finally:

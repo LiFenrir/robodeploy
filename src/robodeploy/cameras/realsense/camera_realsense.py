@@ -51,7 +51,7 @@ class RealSenseCamera(Camera):
 
     Use the provided utility script to find available camera indices and default profiles:
     ```bash
-    python -m lerobot.find_cameras realsense
+    find-cameras realsense
     ```
 
     A `RealSenseCamera` instance requires a configuration object specifying the
@@ -176,8 +176,7 @@ class RealSenseCamera(Camera):
             self.rs_profile = None
             self.rs_pipeline = None
             raise ConnectionError(
-                f"Failed to open {self}."
-                "Run `python -m lerobot.find_cameras realsense` to find available cameras."
+                f"Failed to open {self}.Run `find-cameras realsense` to find available cameras."
             ) from e
 
         self._configure_capture_settings()
@@ -529,6 +528,39 @@ class RealSenseCamera(Camera):
             raise RuntimeError(f"Internal error: Event set but no frame available for {self}.")
 
         return frame
+
+    def get_intrinsics(self) -> dict[str, Any]:
+        """读取相机内参与深度比例因子。
+
+        Returns:
+            dict: {"color": {fx, fy, ppx, ppy, coeffs, model, width, height},
+                   "depth": {...}（use_depth 时）, "depth_scale": 深度单位(米)}
+        """
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"Cannot read intrinsics for {self} as it is not connected.")
+
+        def _profile_intrinsics(stream: "rs.stream") -> dict[str, Any]:
+            profile = self.rs_profile.get_stream(stream).as_video_stream_profile()
+            intr = profile.get_intrinsics()
+            return {
+                "width": intr.width,
+                "height": intr.height,
+                "fx": intr.fx,
+                "fy": intr.fy,
+                "ppx": intr.ppx,
+                "ppy": intr.ppy,
+                "model": intr.model.name,
+                "coeffs": list(intr.coeffs),
+            }
+
+        result: dict[str, Any] = {"color": _profile_intrinsics(rs.stream.color)}
+
+        if self.use_depth:
+            result["depth"] = _profile_intrinsics(rs.stream.depth)
+            depth_sensor = self.rs_profile.get_device().first_depth_sensor()
+            result["depth_scale"] = depth_sensor.get_depth_scale()
+
+        return result
 
     def disconnect(self):
         """

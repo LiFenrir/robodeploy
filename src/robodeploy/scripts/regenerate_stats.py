@@ -11,8 +11,9 @@ import jsonlines
 import numpy as np
 import pyarrow.parquet as pq
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from src.robodeploy.datasets.compute_stats import compute_episode_stats
+# scripts/ 不在 package 内，临时加入 src 根目录以便 import robodeploy
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from robodeploy.datasets.compute_stats import compute_episode_stats
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

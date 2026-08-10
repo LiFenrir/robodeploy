@@ -148,6 +148,8 @@
       if (cw !== img.naturalWidth || ch !== img.naturalHeight) {
         entry.canvas.width = img.naturalWidth;
         entry.canvas.height = img.naturalHeight;
+        // 按相机真实宽高比调整容器，保证画面完整缩放
+        entry.feed.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
       }
       entry.ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
@@ -173,16 +175,11 @@
       var canvas = document.createElement('canvas');
       canvas.className = 'camera-canvas';
 
-      // Match the CSS aspect-ratio (4/3) initially; canvas will resize on first frame
-      var label = document.createElement('div');
-      label.className = 'camera-label';
-      label.textContent = cam;
-
       div.appendChild(canvas);
       div.appendChild(label);
       els.cameraContainer.appendChild(div);
 
-      canvasCtx[cam] = { canvas: canvas, ctx: canvas.getContext('2d') };
+      canvasCtx[cam] = { canvas: canvas, ctx: canvas.getContext('2d'), feed: div };
     });
   }
 

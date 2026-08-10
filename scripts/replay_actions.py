@@ -36,9 +36,7 @@ from robodeploy.robots import RobotConfig, make_robot_from_config  # noqa: F401,
 # Register robot types with draccus ChoiceRegistry
 from robodeploy.robots import (  # noqa: F401, E402
     bi_s1_follower,
-    bi_so100_follower,
     s1_follower,
-    so100_follower,
 )
 
 

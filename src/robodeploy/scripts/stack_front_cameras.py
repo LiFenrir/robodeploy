@@ -16,6 +16,7 @@ Reference: D:/datasets/bi_s1_0521
 
 import argparse
 import json
+import multiprocessing as mp
 import os
 import shutil
 import subprocess
@@ -50,11 +51,11 @@ def _get_ffmpeg_video_encode_args() -> list[str]:
             capture_output=True, text=True,
         )
         if "libsvtav1" in result.stdout:
-            return ["-c:v", "libsvtav1", "-crf", "30"]
+            return ["-c:v", "libsvtav1", "-crf", "30", "-preset", "8"]
     except Exception:
         pass
     # Fallback to widely-available H.264
-    return ["-c:v", "libx264", "-preset", "fast", "-crf", "18"]
+    return ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "18"]
 
 
 def stack_front_videos(
@@ -125,6 +126,13 @@ def update_info_json(info: dict, stacked_h: int, stacked_w: int) -> dict:
     return info
 
 
+def _stack_one(args: tuple[str, str, str, bool]) -> tuple[str, tuple[int, int]]:
+    """Worker for parallel stacking. Returns (ep_name, (h, w))."""
+    front_path, front1_path, output_path, rotate = args
+    h, w = stack_front_videos(front_path, front1_path, output_path, rotate=rotate)
+    return os.path.basename(front_path), (h, w)
+
+
 def process_dataset(src_path: str, tgt_path: str, rotate: bool = True) -> None:
     src_root = Path(src_path)
     tgt_root = Path(tgt_path)
@@ -159,17 +167,15 @@ def process_dataset(src_path: str, tgt_path: str, rotate: bool = True) -> None:
             if not episodes:
                 continue
 
-            for ep_path in tqdm(episodes, desc=f"  Episodes"):
+            work_items = []
+            for ep_path in episodes:
                 ep_name = ep_path.stem
                 front_src = str(chunk_dir / "observation.images.front" / f"{ep_name}.mp4")
                 front1_src = str(chunk_dir / "observation.images.front_1" / f"{ep_name}.mp4")
-
-                # Stack front + front_1
                 tgt_front_dir = tgt_videos / chunk_dir.name / "observation.images.front"
                 tgt_front = str(tgt_front_dir / f"{ep_name}.mp4")
-                h, w = stack_front_videos(front_src, front1_src, tgt_front, rotate=rotate)
-                if stacked_h is None:
-                    stacked_h, stacked_w = h, w
+                tgt_front_dir.mkdir(parents=True, exist_ok=True)
+                work_items.append((front_src, front1_src, tgt_front, rotate))
 
                 # Copy wrist videos as-is
                 for wrist_view in (
@@ -182,6 +188,19 @@ def process_dataset(src_path: str, tgt_path: str, rotate: bool = True) -> None:
                         tgt_vid = tgt_dir / f"{ep_name}.mp4"
                         tgt_dir.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(str(src_vid), str(tgt_vid))
+
+            # Parallel stacking
+            n_workers = max(1, min(mp.cpu_count() - 1, 8))
+            with mp.Pool(processes=n_workers) as pool:
+                results = list(tqdm(
+                    pool.imap(_stack_one, work_items),
+                    total=len(work_items),
+                    desc=f"  Episodes (workers={n_workers})",
+                ))
+
+            for _, (h, w) in results:
+                if stacked_h is None:
+                    stacked_h, stacked_w = h, w
 
     # --- Data (copy as-is) ---
     print("\n[2/3] Copying parquet data...")

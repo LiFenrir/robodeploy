@@ -47,21 +47,25 @@ dependencies = [
 
     # Core dependencies
     "av>=14.2.0",
-    "cmake>=3.29.0.1",
     "deepdiff>=7.0.1,<9.0.0",
     "draccus==0.10.0",
-    "flask>=3.0.3,<4.0.0",
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "imageio[ffmpeg]>=2.34.0,<3.0.0",
     "jsonlines>=4.0.0",
+    "numpy>=1.26.0",
     "opencv-python-headless>=4.9.0",
     "packaging>=24.2",
+    "pandas>=2.0.0",
+    "pillow>=10.0.0",
     "pynput>=1.7.7",
     "pyserial>=3.5",
+    "safetensors>=0.4.0",
+    "termcolor>=2.4.0",
     "torch>=2.2.1",
     "torchcodec>=0.2.1; sys_platform != 'win32' and (sys_platform != 'linux' or (platform_machine != 'aarch64' and platform_machine != 'arm64' and platform_machine != 'armv7l')) and (sys_platform != 'darwin' or platform_machine != 'x86_64')",
     "torchvision>=0.21.0",
+    "tqdm>=4.66.0",
 
     # Policy client dependencies
     "websockets>=12.0",
@@ -69,7 +73,6 @@ dependencies = [
     "typing_extensions>=4.0.0",
 
     # Data collection dependencies
-    "h5py>=3.0.0",
     "pyarrow>=10.0.0",
 ]
 
@@ -81,9 +84,7 @@ feetech = ["feetech-servo-sdk>=1.0.0"]
 dynamixel = ["dynamixel-sdk>=3.7.31"]
 
 # Robots
-gamepad = ["robodeploy[pygame-dep]", "hidapi>=0.14.0"]
-hopejr = ["robodeploy[feetech]", "robodeploy[pygame-dep]"]
-lekiwi = ["robodeploy[feetech]", "pyzmq>=26.2.1"]
+innov = ["mujoco>=3.1.0"]
 intelrealsense = [
     "pyrealsense2>=2.55.1.6486 ; sys_platform != 'darwin'",
     "pyrealsense2-macosx>=2.54 ; sys_platform == 'darwin'",
@@ -92,25 +93,30 @@ intelrealsense = [
 # Common
 pygame-dep = ["pygame>=2.5.1"]
 
+# Qt UI
+qt = ["PyQt6>=6.6.0", "pyqtgraph>=0.13.0"]
+
 # Development
-dev = ["pre-commit>=3.7.0", "debugpy>=1.8.1"]
+dev = ["pre-commit>=3.7.0", "debugpy>=1.8.1", "matplotlib>=3.8.0"]
 test = ["pytest>=8.1.0", "pytest-timeout>=2.4.0", "pytest-cov>=5.0.0", "mock-serial>=0.0.1 ; sys_platform != 'win32'"]
 
 # All
 all = [
+    "robodeploy[feetech]",
     "robodeploy[dynamixel]",
-    "robodeploy[gamepad]",
-    "robodeploy[hopejr]",
-    "robodeploy[lekiwi]",
+    "robodeploy[innov]",
     "robodeploy[intelrealsense]",
+    "robodeploy[pygame-dep]",
+    "robodeploy[qt]",
     "robodeploy[dev]",
     "robodeploy[test]",
 ]
 
 # ---------------- Tool Configurations ----------------
 [project.scripts]
-lerobot-find-cameras = "robodeploy.find_cameras:main"
-lerobot-find-port = "robodeploy.find_port:main"
+find-cameras = "robodeploy.find_cameras:main"
+robodeploy-qt = "robodeploy.qtui.app:main"
+find-port = "robodeploy.find_port:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -23,11 +23,15 @@ Usage:
 import argparse
 import json
 import sys
+import termios
 import time
+import tty
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
+
+import serial
 
 from robodeploy.robots.lerobot_robot_my_arm.ArmDriver import RobotController
 from robodeploy.utils.keyboard_control import get_keypress
@@ -50,19 +54,29 @@ def main():
     limits = {name: {"min": float("inf"), "max": float("-inf")} for name in JOINT_NAMES}
     gripper_limits = {"min": float("inf"), "max": float("-inf")}
 
-    arm = RobotController(args.port, type="leader")
-    if not arm.RobotCtrl.serial_.is_open:
-        raise ConnectionError(f"串口 {args.port} 打开失败")
+    try:
+        arm = RobotController(args.port, type="leader")
+    except serial.SerialException as e:
+        raise ConnectionError(f"串口 {args.port} 打开失败: {e}") from e
     print(f"机械臂 {args.port} 已连接")
 
+    old_termios = None
     try:
-        arm.enable()
+        if not arm.enable():
+            raise RuntimeError("电机 enable 失败，请检查电源/串口连接")
         time.sleep(0.1)
-        arm.set_mit_mode()
+        if not arm.set_mit_mode():
+            raise RuntimeError("切换 MIT 模式失败")
         time.sleep(0.1)
-        arm.enable()
+        if not arm.enable():
+            raise RuntimeError("二次 enable 失败")
         arm.gravity_compensation()
-        print("MIT 模式 + 重力补偿已启用，可手动拖动关节")
+        print("MIT 模式 + 重力补偿已启用，可手动拖动关节及夹爪")
+
+        # 设置终端 cbreak，使 Esc 立即生效
+        fd = sys.stdin.fileno()
+        old_termios = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
 
         print("\n" + "=" * 80)
         print("  拖动到极限位置后按 Esc 退出并保存结果")
@@ -105,6 +119,13 @@ def main():
     except KeyboardInterrupt:
         print("\n用户中断")
     finally:
+        # 恢复终端模式
+        if old_termios is not None:
+            try:
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_termios)
+            except Exception as e:
+                print(f"恢复终端模式异常: {e}")
+
         print("\n清理中...")
         try:
             arm.set_pos_vel_mode()

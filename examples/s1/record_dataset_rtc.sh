@@ -20,7 +20,7 @@ set -e
 
 # Robot（机器人硬件）
 #------------------------------------------------------------------------------
-ROBOT_TYPE="bi_s1_follower"                  # 单臂: s1_follower, so100_follower  双臂: bi_s1_follower, bi_so100_follower
+ROBOT_TYPE="bi_s1_follower"                  # 单臂: s1_follower  双臂: bi_s1_follower
 # 双臂时取消下面两行注释
 LEFT_FOLLOWER_PORT="/dev/ttyUSB0"
 RIGHT_FOLLOWER_PORT="/dev/ttyUSB1"
@@ -28,7 +28,7 @@ RIGHT_FOLLOWER_PORT="/dev/ttyUSB1"
 
 # Teleop（遥操作主端）
 #------------------------------------------------------------------------------
-TELEOP_TYPE="bi_s1_leader"                   # 单臂: s1_leader, so100_leader  双臂: bi_s1_leader, bi_so100_leader  纯推理留空: ""
+TELEOP_TYPE="bi_s1_leader"                   # 单臂: s1_leader  双臂: bi_s1_leader  纯推理留空: ""
 # 双臂时取消下面两行注释
 LEFT_LEADER_PORT="/dev/ttyUSB3"
 RIGHT_LEADER_PORT="/dev/ttyUSB2"
@@ -115,7 +115,7 @@ ROBOT_ARGS=(
     --robot.type "$ROBOT_TYPE"
 )
 
-if [ "$ROBOT_TYPE" = "bi_s1_follower" ] || [ "$ROBOT_TYPE" = "bi_so100_follower" ]; then
+if [ "$ROBOT_TYPE" = "bi_s1_follower" ]; then
     ROBOT_ARGS+=(--robot.left_arm_port "${LEFT_FOLLOWER_PORT:-/dev/left_follower}")
     ROBOT_ARGS+=(--robot.right_arm_port "${RIGHT_FOLLOWER_PORT:-/dev/right_follower}")
 else
@@ -174,7 +174,7 @@ print_config() {
     echo "    S1 数据采集 + 策略推理 (RTC)"
     echo "=============================================="
     echo "Robot:        $ROBOT_TYPE"
-    if [ "$ROBOT_TYPE" = "bi_s1_follower" ] || [ "$ROBOT_TYPE" = "bi_so100_follower" ]; then
+    if [ "$ROBOT_TYPE" = "bi_s1_follower" ]; then
         echo "  Left:       ${LEFT_FOLLOWER_PORT:-/dev/left_follower}"
         echo "  Right:      ${RIGHT_FOLLOWER_PORT:-/dev/right_follower}"
     else

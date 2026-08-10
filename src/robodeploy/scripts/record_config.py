@@ -38,16 +38,12 @@ from robodeploy.policy_clients import (  # noqa: F401
 from robodeploy.robots import (  # noqa: F401
     RobotConfig,
     bi_s1_follower,
-    bi_so100_follower,
     s1_follower,
-    so100_follower,
 )
 from robodeploy.teleoperators import (  # noqa: F401
     TeleoperatorConfig,
     bi_s1_leader,
-    bi_so100_leader,
     s1_leader,
-    so100_leader,
 )
 
 
@@ -96,3 +92,14 @@ class RecordConfig:
 
     # WebUI
     webui_port: int = 8080
+
+    # 前端：web（浏览器）| qt（桌面内嵌）| none（仅键盘）
+    front_end: str = "web"
+
+    # 部署模式：Qt 前端隐藏录制/保存按钮（control_mode=policy 纯推理）
+    deploy_mode: bool = False
+
+    # URDF 随动视图（front_end=qt 时生效）
+    urdf_path: str = "/home/kemove/INNOV/infra/robot_SDK/robot-arm-4340/urdf/urdf/urdf.urdf"
+    urdf_joint_indices: str = "7,8,9,10,11,12"  # state 向量中映射到 URDF qpos 的维度
+    urdf_joint_scale: float = 1.0  # 关节角 → 弧度换算系数

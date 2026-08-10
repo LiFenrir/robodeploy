@@ -139,13 +139,12 @@ available_datasets = sorted(
 
 # lists all available robots from `robodeploy/robots`
 available_robots = [
-    "koch",
-    "koch_bimanual",
-    "aloha",
-    "so100",
-    "so101",
+    "arx_x5",
+    "bi_arx_x5",
     "bi_s1_follower",
     "s1_follower",
+    "innov_arm_v1",
+    "bi_innov_arm_v1",
 ]
 
 # lists all available cameras from `robodeploy/cameras`
