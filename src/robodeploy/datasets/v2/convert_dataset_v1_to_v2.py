@@ -598,27 +598,7 @@ def convert_dataset(
 
 
 def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:
-    if robot_type == "aloha":
-        raise NotImplementedError  # TODO
-
-    elif robot_type == "koch_follower":
-        from robodeploy.robots.koch_follower import KochFollowerConfig
-
-        return KochFollowerConfig(**kwargs)
-    elif robot_type == "so100_follower":
-        from robodeploy.robots.so100_follower import SO100FollowerConfig
-
-        return SO100FollowerConfig(**kwargs)
-    elif robot_type == "stretch":
-        from robodeploy.robots.stretch3 import Stretch3RobotConfig
-
-        return Stretch3RobotConfig(**kwargs)
-    elif robot_type == "lekiwi":
-        from robodeploy.robots.lekiwi import LeKiwiConfig
-
-        return LeKiwiConfig(**kwargs)
-    else:
-        raise ValueError(f"Robot type '{robot_type}' is not available.")
+    raise ValueError(f"Robot type '{robot_type}' is not available.")
 
 
 def main():
