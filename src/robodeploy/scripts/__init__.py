@@ -8,9 +8,6 @@ This subpackage provides:
   - filter_valid_episodes / filter_lerobot_dataset: Episode filtering
   - merge_lerobot_datasets: Dataset merging
   - space_mirroring / stack_front_cameras: Video processing
-  - data_augment: Data augmentation pipeline
   - regenerate_stats: Statistics regeneration
-  - reassign_tasks: Task label reassignment
-  - split_by_position: Position-based dataset splitting
   - binarize_gripper: Gripper state binarization
 """

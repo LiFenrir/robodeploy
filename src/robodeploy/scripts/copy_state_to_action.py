@@ -23,7 +23,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.robodeploy.datasets.compute_stats import compute_episode_stats
+from robodeploy.datasets.compute_stats import compute_episode_stats
 
 
 def _detect_gripper_indices(joint_keys: list[str]) -> list[int]:
