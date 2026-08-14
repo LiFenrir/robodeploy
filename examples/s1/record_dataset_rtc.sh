@@ -271,7 +271,7 @@ fi
 if [ "$CONTROL_MODE" != "teleop" ]; then
     POLICY_ARGS=(--policy.type "$POLICY_TYPE" --policy.host "$OPENPI_HOST" --policy.port "$OPENPI_PORT")
     if [ "$USE_RTC" = true ]; then
-        RTC_ARGS=(--use_rtc true --rtc_execution_horizon "$RTC_EXECUTION_HORIZON" --rtc_queue_size "$RTC_QUEUE_SIZE")
+        RTC_ARGS=(--use_rtc true --rtc_execution_horizon "$RTC_EXECUTION_HORIZON")
     else
         RTC_ARGS=(--use_rtc false)
     fi

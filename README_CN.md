@@ -9,8 +9,7 @@
 - **多模式数据采集** — 纯遥操作、纯策略推理、混合模式（P 键热切换）
 - **摄像头集成** — OpenCV USB 摄像头、Intel RealSense 深度摄像头
 - **策略推理** — OpenPI WebSocket 客户端，支持时序平滑与 DAgger 对齐
-- **Web 管理界面** — Flask 实时监控与控制面板
-- **ROS 部署** — Piper 机器人 ROS noetic 部署脚本
+- **Web 管理界面** — FastAPI WebSocket 实时监控与控制面板
 
 ## 项目结构
 
@@ -18,7 +17,6 @@
 robodeploy/
 ├── src/robodeploy/         # 核心包：cameras, datasets, motors, robots, teleoperators, webui, scripts
 ├── scripts/                   # 硬件部署/测试工具（回放、推理检查、RTC 冒烟测试）
-├── deploy/                    # 部署工具：piper_deploy.py, ROS launch, data_collection
 ├── examples/                  # 使用示例
 └── pyproject.toml             # 项目元数据与依赖配置
 ```
@@ -83,7 +81,7 @@ python -m robodeploy.scripts.record_dataset \
 | 机器学习 | PyTorch, HuggingFace datasets & hub |
 | 视觉 | OpenCV, Intel RealSense |
 | 配置 | draccus（数据类驱动的 CLI 解析） |
-| Web 界面 | Flask + FastAPI / uvicorn |
+| Web 界面 | FastAPI / uvicorn |
 | 视频编码 | PyAV (av) |
 | 串口通信 | pyserial, Dynamixel SDK, Feetech SDK |
 | 策略推理 | OpenPI WebSocket 客户端, msgpack |

@@ -11,8 +11,7 @@ Robotics deployment & data collection toolkit — based on LeRobot, adapted for 
 - **Multi-mode data collection** — teleop, policy inference, mixed (hot-switch with P key)
 - **Camera integration** — OpenCV USB cameras, Intel RealSense depth cameras
 - **Policy inference** — OpenPI WebSocket client with temporal smoothing and DAgger alignment
-- **Flask WebUI** — real-time monitoring and control dashboard
-- **ROS deployment** — Piper robot ROS noetic deployment scripts
+- **WebUI** — FastAPI WebSocket — real-time monitoring and control dashboard
 
 ## Project Layout
 
@@ -20,7 +19,6 @@ Robotics deployment & data collection toolkit — based on LeRobot, adapted for 
 robodeploy/
 ├── src/robodeploy/         # core package: cameras, datasets, motors, robots, teleoperators, webui, scripts
 ├── scripts/                   # hardware deploy/test tools (replay, inference check, RTC smoke test)
-├── deploy/                    # deployment: piper_deploy.py, ROS launch, data_collection
 ├── examples/                  # usage examples
 └── pyproject.toml             # project metadata & dependencies
 ```
@@ -85,7 +83,7 @@ See [scripts/README.md](scripts/README.md) for details.
 | ML Backend | PyTorch, HuggingFace datasets & hub |
 | Vision | OpenCV, Intel RealSense |
 | Config | draccus (dataclass-based CLI) |
-| WebUI | Flask + FastAPI / uvicorn |
+| WebUI | FastAPI / uvicorn |
 | Video | PyAV (av) |
 | Serial | pyserial, Dynamixel SDK, Feetech SDK |
 | Policy | OpenPI WebSocket client, msgpack |
