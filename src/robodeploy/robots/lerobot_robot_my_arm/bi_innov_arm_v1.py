@@ -15,6 +15,21 @@ from .innov_arm_v1 import MOTOR_NAMES
 
 logger = logging.getLogger(__name__)
 
+# 前6关节限位(URDF结构限位,上下限各留0.001rad余量)
+JOINT_LIMITS = (
+    (-3.1406, 3.1406),
+    (-3.1406, -0.001),
+    (0.001, 3.1406),
+    (-1.569, 1.699),
+    (-1.999, 1.999),
+    (-3.1406, 3.1406),
+)
+
+
+def _clamp_joint_positions(positions: list[float]) -> list[float]:
+    """截断到关节限位内。"""
+    return [min(max(q, lo), hi) for q, (lo, hi) in zip(positions, JOINT_LIMITS, strict=True)]
+
 
 class BiInnovArmV1Robot(Robot):
     config_class = BiInnovArmV1Config
@@ -136,9 +151,13 @@ class BiInnovArmV1Robot(Robot):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        left_joint_pos = [float(action[f"left_{motor}.pos"]) for motor in MOTOR_NAMES[:6]]
+        left_joint_pos = _clamp_joint_positions(
+            [float(action[f"left_{motor}.pos"]) for motor in MOTOR_NAMES[:6]]
+        )
         left_gripper_pos = float(action["left_gripper.pos"])
-        right_joint_pos = [float(action[f"right_{motor}.pos"]) for motor in MOTOR_NAMES[:6]]
+        right_joint_pos = _clamp_joint_positions(
+            [float(action[f"right_{motor}.pos"]) for motor in MOTOR_NAMES[:6]]
+        )
         right_gripper_pos = float(action["right_gripper.pos"])
 
         if self.config.mode == "collect":
